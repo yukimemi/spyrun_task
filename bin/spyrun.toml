@@ -1,0 +1,211 @@
+# =============================================================================
+# File        : spyrun.toml
+# Author      : yukimemi
+# Last Change : 2024/08/24 19:12:11.
+# =============================================================================
+
+[vars]
+base_local = '{{ cmd_dir }}\..'
+base_local_system = '{{ base_local }}\system'
+base_local_user = '{{ base_local }}\user'
+base_remote = '{{ psf(arg="init.ps1") }}'
+base_remote_system = '{{ base_remote }}\system'
+base_remote_user = '{{ base_remote }}\user'
+cfg_local_dir_system = '{{ base_local_system }}\cfg'
+cfg_local_dir_user = '{{ base_local_user }}\cfg'
+cfg_local_path_system = '{{ cfg_local_dir_system }}\{{ cfg_name }}'
+cfg_local_path_user = '{{ cfg_local_dir_user }}\{{ cfg_name }}'
+cfg_remote_dir = '{{ base_remote }}\bin'
+cfg_remote_dir_system = '{{ base_remote_system }}\cfg'
+cfg_remote_dir_user = '{{ base_remote_user }}\cfg'
+cfg_remote_path = '{{ cfg_remote_dir }}\{{ cfg_name }}'
+cfg_remote_path_system = '{{ cfg_remote_dir_system }}\{{ cfg_name }}'
+cfg_remote_path_user = '{{ cfg_remote_dir_user }}\{{ cfg_name }}'
+cmd_remote_dir = '{{ base_remote }}\bin'
+cmd_remote_path = '{{ cmd_remote_dir }}\{{ cmd_name }}'
+hostname = '{{ env(arg="COMPUTERNAME") }}'
+kick_dir_system = '{{ base_local_system }}\kick'
+kick_dir_user = '{{ base_local_user }}\kick'
+stop_dir_system = '{{ base_local_system }}'
+stop_dir_user = '{{ base_local_user }}'
+stop_force_path_system = '{{ stop_dir_system }}\stop_force.flg'
+stop_force_path_user = '{{ stop_dir_user }}\stop_force.flg'
+sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$'
+version = '20240824_191211'
+
+funcs = '''
+function log {
+  param([string]$msg)
+  trap { Write-Host "[log] Error $_" }
+  $now = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+  Write-Host "${now} ${msg}"
+}
+'''
+
+trap_no_stop = '''
+log "spy_name: [{{ spy_name }}]"
+$ErrorActionPreference = "Stop"
+trap {
+  log "{{ spy_name }} Error ! $_"
+}
+'''
+
+trap_stop = '''
+log "spy_name: [{{ spy_name }}]"
+$ErrorActionPreference = "Stop"
+trap {
+  log "{{ spy_name }} Error ! $_"
+  "spy_name: [{{ spy_name }}] $_" | Set-Content "{{ stop_path }}"
+}
+'''
+
+trap_stop_force = '''
+log "spy_name: [{{ spy_name }}]"
+$ErrorActionPreference = "Stop"
+trap {
+  log "{{ spy_name }} Error ! $_"
+  "spy_name: [{{ spy_name }}] $_" | Set-Content "{{ stop_force_path }}"
+}
+'''
+
+z_init_fn = '''
+$script:stopFlg = $false
+$script:stopSystemFlg = $false
+$script:stopUserFlg = $false
+$copy = {
+  param([string]$local, [string]$remote, [bool]$bin = $false)
+  $localHash = (Get-FileHash $local).Hash
+  $remoteHash = (Get-FileHash $remote).Hash
+  if ($remoteHash -ne $localHash) {
+    if ($bin) {
+      $remoteDir = Split-Path -Parent $remote
+      log "robocopy ${remoteDir} {{ cmd_dir }} {{ cmd_name }}"
+      & cmd /c start "" robocopy $remoteDir "{{ cmd_dir }}" {{ cmd_name }}
+      $script:stopSystemFlg = $true
+      $script:stopUserFlg = $true
+    } else {
+      if ($local -match "_backup") {
+        $local = $local.Replace("_backup", "")
+        $localHash = (Get-FileHash $local).Hash
+        if ($localHash -eq $remoteHash) {
+          return
+        }
+      }
+      log "${remote} -> ${local}"
+      New-Item -Force -ItemType Directory (Split-Path -Parent $local)
+      Copy-Item -Force $remote $local
+    }
+    $script:stopFlg = $true
+  }
+}
+& $copy "{{ cfg_path }}" "{{ cfg_remote_path }}"
+& $copy "{{ cmd_path }}" "{{ cmd_remote_path }}" $true
+& $copy "{{ cmd_dir }}\common.ps1" "{{ cmd_remote_dir }}\common.ps1"
+& $copy "{{ cmd_dir }}\PsExec64.exe" "{{ cmd_remote_dir }}\PsExec64.exe"
+& $copy "{{ cmd_dir }}\launch.js" "{{ cmd_remote_dir }}\launch.js"
+
+& $copy "{{ cfg_local_path_system }}" "{{ cfg_remote_path_system }}"
+& $copy "{{ cfg_local_path_user }}" "{{ cfg_remote_path_user }}"
+
+if ($script:stopFlg) {
+  "spy_name: [{{ spy_name }}] stop flg is true" | Set-Content "{{ stop_force_path }}"
+}
+if ($script:stopSystemFlg) {
+  "spy_name: [{{ spy_name }}] stop system flg is true" | Set-Content "{{ stop_force_path_system }}"
+}
+if ($script:stopUserFlg) {
+  "spy_name: [{{ spy_name }}] stop user flg is true" | Set-Content "{{ stop_force_path_user }}"
+}
+
+New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\host\poll\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\host\notify\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\host\poll\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\host\notify\{{ hostname }}" | Out-Null
+
+New-Item -Force -ItemType Directory "{{ kick_dir_system }}\all\poll" | Out-Null
+New-Item -Force -ItemType Directory "{{ kick_dir_system }}\all\notify" | Out-Null
+New-Item -Force -ItemType Directory "{{ kick_dir_system }}\host\poll" | Out-Null
+New-Item -Force -ItemType Directory "{{ kick_dir_system }}\host\notify" | Out-Null
+
+New-Item -Force -ItemType Directory "{{ kick_dir_user }}\all\poll" | Out-Null
+New-Item -Force -ItemType Directory "{{ kick_dir_user }}\all\notify" | Out-Null
+New-Item -Force -ItemType Directory "{{ kick_dir_user }}\host\poll" | Out-Null
+New-Item -Force -ItemType Directory "{{ kick_dir_user }}\host\notify" | Out-Null
+
+icacls "{{ base_local_system }}\cmd" /grant EveryOne:F /t
+icacls "{{ base_local_system }}\flg" /grant EveryOne:F
+icacls "{{ base_local_system }}\kick" /grant EveryOne:F /t
+icacls "{{ base_local_system }}\kicked" /grant EveryOne:F /t
+icacls "{{ base_local_system }}\log" /grant EveryOne:F /t
+
+icacls "{{ base_local_user }}\cmd" /grant EveryOne:F /t
+icacls "{{ base_local_user }}\flg" /grant EveryOne:F
+icacls "{{ base_local_user }}\kick" /grant EveryOne:F /t
+icacls "{{ base_local_user }}\kicked" /grant EveryOne:F /t
+icacls "{{ base_local_user }}\log" /grant EveryOne:F /t
+'''
+
+[cfg]
+stop_flg = '{{ cmd_dir }}\stop.flg'
+
+[log]
+path = '{{ base_local }}\log\{{ cmd_stem }}.log'
+level = 'info'
+
+[init]
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ trap_stop_force }}
+  log "{{ version }}"
+  function Ensure-ScheduledTask {
+    param([string]$uri, [string]$taskPath, [string]$taskName, [string]$repetition, [string]$repetitionStr, [string]$cmd, [string]$arg, [bool]$runas = $true)
+    $registered = Get-ScheduledTask | Where-Object { $_.URI -eq $uri }
+    if (($null -eq $registered) -or ($registered.Triggers.Repetition.Interval -ne $repetition)) {
+      log "Register ScheduledTask ! (${repetition})"
+      $now = Get-Date -f "yyyy/MM/dd HH:mm"
+      $action = & {
+        if ([string]::IsNullOrEmpty($arg)) {
+          return New-ScheduledTaskAction -Execute "${cmd}" -WorkingDirectory "{{ cmd_dir }}"
+        } else {
+          return New-ScheduledTaskAction -Execute "${cmd}" -Argument "${arg}" -WorkingDirectory "{{ cmd_dir }}"
+        }
+      }
+      $trigger = New-ScheduledTaskTrigger -Once -At $now -RepetitionInterval $repetitionStr
+      $settings = New-ScheduledTaskSettingsSet -WakeToRun -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -DontStopOnIdleEnd -StartWhenAvailable
+      $principal = & {
+        if ($runas) {
+          return New-ScheduledTaskPrincipal -UserId System -RunLevel Highest
+        } else {
+          return New-ScheduledTaskPrincipal -GroupId Users
+        }
+      }
+      Register-ScheduledTask -Force -TaskPath $taskPath -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal
+    }
+  }
+
+  Ensure-ScheduledTask "\spyrun\spyrun" "\spyrun" "spyrun" "PT5M" "00:05:00" "{{ cmd_path }}" '' $true
+  Ensure-ScheduledTask "\spyrun\system\spyrun" "\spyrun\system" "spyrun" "PT5M" "00:05:00" "{{ cmd_path }}" '-c "{{ cfg_local_path_system }}"' $true
+  Ensure-ScheduledTask "\spyrun\user\spyrun" "\spyrun\user" "spyrun" "PT5M" "00:05:00" "C:\Windows\system32\wscript.exe" "`"{{ cmd_dir }}\launch.js`" `"{{ cmd_path }}`" -c `"{{ cfg_local_path_user }}`"" $false
+
+  {{ z_init_fn }}
+}''',
+]
+
+# Update bin dir when there is a change.
+[[spys]]
+name = 'update'
+input = '{{ cmd_remote_dir }}'
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 5000
+[[spys.patterns]]
+pattern = '{{ sync_pattern }}'
+cmd = 'powershell'
+arg = ['-NoProfile', '-Command', '''& {
+  {{ funcs }}
+  {{ trap_stop_force }}
+  {{ z_init_fn }}
+}''']

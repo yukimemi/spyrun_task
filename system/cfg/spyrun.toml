@@ -1,0 +1,154 @@
+# =============================================================================
+# File        : spyrun.toml
+# Author      : yukimemi
+# Last Change : 2024/09/14 23:58:32.
+# =============================================================================
+
+[vars]
+base_remote = '{{ psf(arg="init.ps1") }}'
+base_system = '{{ base }}\system'
+base_user = '{{ base }}\user'
+cfg_remote_dir = '{{ base_system }}\cfg'
+cfg_remote_path = '{{ base_system }}\cfg\spyrun.toml'
+cmd_base = '{{ cmd_dir }}\..\system'
+cmd_remote_dir = '{{ base }}\bin'
+cmd_remote_name = '{{ cmd_name }}'
+cmd_remote_path = '{{ cmd_remote_dir }}\{{ cmd_remote_name }}'
+hostname = '{{ env(arg="COMPUTERNAME") }}'
+version = '20240914_235832'
+
+funcs = '''
+function log {
+  param([string]$msg)
+  trap { Write-Host "[log] Error $_" }
+  $now = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+  Write-Host "${now} ${msg}"
+}
+'''
+
+trap_no_stop = '''
+log "spy_name: [{{ spy_name }}]"
+$ErrorActionPreference = "Stop"
+trap {
+  log "{{ spy_name }} Error ! $_"
+}
+'''
+
+trap_stop = '''
+log "spy_name: [{{ spy_name }}]"
+$ErrorActionPreference = "Stop"
+trap {
+  log "{{ spy_name }} Error ! $_"
+  "spy_name: [{{ spy_name }}] $_" | Set-Content "{{ stop_path }}"
+}
+'''
+
+trap_stop_force = '''
+log "spy_name: [{{ spy_name }}]"
+$ErrorActionPreference = "Stop"
+trap {
+  log "{{ spy_name }} Error ! $_"
+  "spy_name: [{{ spy_name }}] $_" | Set-Content "{{ stop_force_path }}"
+}
+'''
+
+z_init_fn = '''
+$script:stopFlg = $false
+$copy = {
+  param([string]$local, [string]$remote)
+  $localHash = (Get-FileHash $local).Hash
+  $remoteHash = (Get-FileHash $remote).Hash
+  if ($remoteHash -ne $localHash) {
+    if ($local -match "_backup") {
+      $local = $local.Replace("_backup", "")
+      $localHash = (Get-FileHash $local).Hash
+      if ($localHash -eq $remoteHash) {
+        return
+      }
+    }
+    log "${remote} -> ${local}"
+    New-Item -Force -ItemType Directory (Split-Path -Parent $local)
+    Copy-Item -Force $remote $local
+    $script:stopFlg = $true
+  }
+}
+& $copy "{{ cfg_path }}" "{{ cfg_remote_path }}"
+if ($script:stopFlg) {
+  "spy_name: [{{ spy_name }}] stop flg is true" | Set-Content "{{ stop_force_path }}"
+}
+'''
+
+[cfg]
+stop_flg = '{{ cmd_base }}\stop.flg'
+
+[log]
+path = '{{ cmd_base }}\log\{{ cmd_stem }}.log'
+level = 'info'
+
+[init]
+cmd = 'powershell'
+arg = ['-NoProfile', '-Command', '''& {
+  {{ funcs }}
+  {{ trap_stop_force }}
+  log "{{ version }}"
+  {{ z_init_fn }}
+}''']
+
+# Update cfg toml when there is a change.
+[[spys]]
+name = 'update_toml'
+input = '{{ cfg_remote_dir }}'
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 5000
+[[spys.patterns]]
+pattern = '\.toml$'
+cmd = 'powershell'
+arg = ['-NoProfile', '-Command', '''& {
+  {{ funcs }}
+  {{ trap_stop_force }}
+  {{ z_init_fn }}
+}''']
+
+# Execute under cmd/all/poll
+[[spys]]
+name = 'system_all_poll'
+input = '{{ base_system }}\cmd\all\poll'
+output = '{{ base_system }}\log\all\poll\{{ event_stem }}\{{ hostname }}'
+debounce = 5000
+[spys.poll]
+interval = 10000
+[spys.walk]
+delay = [0, 60000]
+pattern = '\.cmd$|\.exe$|\.bat$'
+
+# Execute under cmd/all/notify
+[[spys]]
+name = 'system_all_notify'
+input = '{{ base_system }}\cmd\all\notify'
+output = '{{ base_system }}\log\all\notify\{{ event_stem }}\{{ hostname }}'
+throttle = 5000
+[spys.walk]
+delay = [0, 60000]
+pattern = '\.cmd$|\.exe$|\.bat$'
+
+# Execute under cmd/host/poll
+[[spys]]
+name = 'system_host_poll'
+input = '{{ base_system }}\cmd\host\poll\{{ hostname }}'
+output = '{{ base_system }}\log\host\poll\{{ event_stem }}\{{ hostname }}'
+debounce = 5000
+[spys.poll]
+interval = 10000
+[spys.walk]
+delay = [0, 60000]
+pattern = '\.cmd$|\.exe$|\.bat$'
+
+# Execute under cmd/host/notify
+[[spys]]
+name = 'system_host_notify'
+input = '{{ base_system }}\cmd\host\notify\{{ hostname }}'
+output = '{{ base_system }}\log\host\notify\{{ event_stem }}\{{ hostname }}'
+throttle = 5000
+[spys.walk]
+pattern = '\.cmd$|\.exe$|\.bat$'
+
