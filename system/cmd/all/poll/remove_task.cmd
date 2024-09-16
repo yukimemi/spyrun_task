@@ -3,18 +3,18 @@
 
 <#
   .SYNOPSIS
-    onedrive_upload
+    remove_task
   .DESCRIPTION
-    OneDrive のファイルをアップロードする
+    不要なタスクの削除を行う
   .INPUTS
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/17 00:35:17.
+  .Last Change : 2024/09/17 00:17:31.
 #>
-param([bool]$async = $false)
+param()
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20240917_003517"
+$version = "20240917_001731"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -48,28 +48,28 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT30M</Interval>
+        <Interval>PT15M</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
       <Enabled>true</Enabled>
       <RandomDelay>PT3H</RandomDelay>
     </TimeTrigger>
-    <LogonTrigger>
+    <BootTrigger>
       <Enabled>true</Enabled>
-    </LogonTrigger>
+    </BootTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <GroupId>S-1-5-32-545</GroupId>
-      <RunLevel>LeastPrivilege</RunLevel>
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
     </Principal>
   </Principals>
   <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>true</AllowHardTerminate>
+    <AllowHardTerminate>false</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
     <IdleSettings>
@@ -83,7 +83,7 @@ function Start-Main {
     <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <WakeToRun>true</WakeToRun>
-    <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <Priority>7</Priority>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
@@ -92,8 +92,7 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>C:\Windows\system32\wscript.exe</Command>
-      <Arguments>"$($app.spyrunDir)\launch.js" "$($app.cmdLocalFile)"</Arguments>
+      <Command>$($app.cmdLocalFile)</Command>
       <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
     </Exec>
   </Actions>
@@ -102,8 +101,69 @@ function Start-Main {
 
     Start-MainBefore $app $xmlStr
 
+    $sch = New-Object -ComObject Schedule.Service
+    [void]$sch.connect()
+
+    $removeTasks = {
+      param([string]$taskPath, [string]$taskName)
+      $taskPath = $taskPath -replace '^\\', ''
+      $taskPath = $taskPath -replace '\\$', ''
+
+      $folder = $sch.GetFolder($taskPath)
+      if (![string]::IsNullOrEmpty($taskName)) {
+        $folder.GetTasks(1) | Where-Object {
+          $folder.Path -eq $taskPath -and $_.Name -eq $taskName
+        } | ForEach-Object {
+          log "Remove taskpath: [${taskPath}], taskname: [${taskName}]"
+          [void]$folder.DeleteTask($_.Name, $null)
+        }
+      }
+      if ([string]::IsNullOrEmpty($taskName)) {
+        $folder.GetFolders(1) | ForEach-Object {
+          & $removeTasks $_ $taskPath $taskName
+        }
+        $folder.GetTasks(1) | ForEach-Object {
+          [void]$folder.DeleteTask($_.Name, $null)
+        }
+        if ($folder.Path -eq $taskPath -and $taskPath -ne "\") {
+          log "Remove taskpath folder: [$taskPath]"
+          $sch = New-Object -ComObject Schedule.Service
+          [void]$sch.connect()
+          $rootFolder = $sch.GetFolder("\")
+          [void]$rootFolder.DeleteFolder($taskPath, $null)
+        }
+      }
+    }
+
     # Execute main.
-    Execute-Process "attrib" "+u /s `"${env:OneDrive}`""
+    Get-ScheduledTask | Where-Object {
+      $_.URI -match "^\\spyrun"
+    } | Where-Object {
+      $_.URI -notmatch "^\\spyrun\\spyrun"
+    } | Where-Object {
+      $_.URI -notmatch "^\\spyrun\\system\\spyrun"
+    } | Where-Object {
+      $_.URI -notmatch "^\\spyrun\\user\\spyrun"
+    } | ForEach-Object {
+      log $_.URI
+      $cmdPath = $_.URI
+      if ($cmdPath -match "^\\spyrun\\system") {
+        $cmdPath = [System.IO.Path]::Combine($app.base, "$($cmdPath -replace '^\\spyrun\\system', 'system\cmd')")
+      }
+      if ($cmdPath -match "^\\spyrun\\user") {
+        $cmdPath = [System.IO.Path]::Combine($app.base, "$($cmdPath -replace '^\\spyrun\\user', 'user\cmd')")
+      }
+      if ($cmdPath -match "\\host\\") {
+        $cmdPath = [System.IO.Path]::Combine($app.base, "$($cmdPath -replace '\\host\\([^\\]+)\\', `"\host\`$1\${env:COMPUTERNAME}\`")")
+      }
+      $cmdPath += ".cmd"
+      if (Test-Path $cmdPath) {
+        log "${cmdPath} is exist !"
+      } else {
+        log "Remove $($_.URI) task."
+        & $removeTasks $_.TaskPath $_.TaskName
+      }
+    }
 
     return $app.cnst.SUCCESS
 
