@@ -3,54 +3,19 @@
 
 <#
   .SYNOPSIS
-    getinfo
+    caffeine
   .DESCRIPTION
-    情報取得を行う
+    スリーブ抑止する
   .INPUTS
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/16 17:23:06.
+  .Last Change : 2024/09/16 18:43:08.
 #>
-param()
+param([bool]$async = $false)
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20231123_224008"
+$version = "20240414_164854"
 # Enable-RunspaceDebug -BreakAll
-
-<#
-  .SYNOPSIS
-    Get-InfoByPsCommand
-  .DESCRIPTION
-    PowerShell コマンドを実行して情報を採取する
-  .INPUTS
-    - command: 実行コマンド
-    - collect: 収集先パス
-  .OUTPUTS
-    - None
-#>
-function Get-InfoByPsCommand {
-  [CmdletBinding()]
-  [OutputType([void])]
-  param([string]$command, [string]$collect)
-
-  trap {
-    log "[Get-InfoByPsCommand] Error $_" "Red"
-    throw $_
-  }
-
-  $s = Get-Date
-  log "Execute [${command}] ... start"
-  $today = Get-Date -f "yyyyMMdd"
-  $collectLatest = [System.IO.Path]::Combine($collect, $command, "latest", "${env:COMPUTERNAME}_${command}.csv")
-  $collectToday = [System.IO.Path]::Combine($collect, $command, $today, "${env:COMPUTERNAME}_${command}_${today}.csv")
-  New-Item -Force -ItemType Directory (Split-Path -Parent $collectLatest) | Out-Null
-  New-Item -Force -ItemType Directory (Split-Path -Parent $collectToday) | Out-Null
-  Invoke-Expression $command | Select-Object * | Convert-ArrayPropertyToString | Export-Csv -NoTypeInformation -Encoding utf8 $collectLatest
-  Copy-Item -Force $collectLatest $collectToday
-  $e = Get-Date
-  $span = $e - $s
-  log ("Execute [${command}] end ! Elaps: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
-}
 
 <#
   .SYNOPSIS
@@ -81,30 +46,21 @@ function Start-Main {
     <URI>\spyrun\$($app.userType)\$($app.scope)\$($app.watchMode)\$($app.cmdName)</URI>
   </RegistrationInfo>
   <Triggers>
-    <TimeTrigger>
-      <Repetition>
-        <Interval>PT15M</Interval>
-        <StopAtDurationEnd>false</StopAtDurationEnd>
-      </Repetition>
-      <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
+    <LogonTrigger>
       <Enabled>true</Enabled>
-      <RandomDelay>PT3H</RandomDelay>
-    </TimeTrigger>
-    <BootTrigger>
-      <Enabled>true</Enabled>
-    </BootTrigger>
+    </LogonTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>S-1-5-18</UserId>
-      <RunLevel>HighestAvailable</RunLevel>
+      <GroupId>S-1-5-32-545</GroupId>
+      <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
   </Principals>
   <Settings>
-    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>false</AllowHardTerminate>
+    <AllowHardTerminate>true</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
     <IdleSettings>
@@ -118,7 +74,7 @@ function Start-Main {
     <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <WakeToRun>true</WakeToRun>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>
     <Priority>7</Priority>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
@@ -127,7 +83,8 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$($app.cmdLocalFile)</Command>
+      <Command>C:\Windows\system32\wscript.exe</Command>
+      <Arguments>"$($app.spyrunDir)\launch.js" "$($app.cmdLocalFile)"</Arguments>
       <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
     </Exec>
   </Actions>
@@ -137,13 +94,29 @@ function Start-Main {
     Start-MainBefore $app $xmlStr
 
     # Execute main.
-    $collect = [System.IO.Path]::Combine($app.clct, $app.cmdName)
-    Get-InfoByPsCommand "Get-ComputerInfo" $collect
-    Get-InfoByPsCommand "Get-NetIPAddress" $collect
-    Get-InfoByPsCommand "Get-NetIPConfiguration" $collect
-    Get-InfoByPsCommand "Get-NetRoute" $collect
-    Get-InfoByPsCommand "Get-DnsClientServerAddress" $collect
-    Get-InfoByPsCommand "Get-HotFix" $collect
+    if (!$async) {
+      $launch = [System.IO.Path]::Combine($app.spyrunDir, "launch.js")
+      Start-Process -File "wscript.exe" -ArgumentList $launch, $app.cmdFile, 1
+      return $app.cnst.SUCCESS
+    }
+    log "[info] Currently ordering a double shot of espresso..."
+
+    $sig = @"
+[DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+public static extern void SetThreadExecutionState(uint esFlags);
+"@
+
+    $ES_CONTINUOUS = [uint32]"0x80000000"
+    $ES_AWAYMODE_REQUIRED = [uint32]"0x00000040"
+    $ES_DISPLAY_REQUIRED = [uint32]"0x00000002"
+    $ES_SYSTEM_REQUIRED = [uint32]"0x00000001"
+
+    $stes = Add-Type -MemberDefinition $sig -Name System -Namespace Win32 -PassThru
+
+    [void]$stes::SetThreadExecutionState($ES_SYSTEM_REQUIRED -bor $ES_DISPLAY_REQUIRED -bor $ES_CONTINUOUS)
+
+    Read-Host "[info] Enter if you want to exit ..."
+    log "[info] No more espressos left behind the counter."
 
     return $app.cnst.SUCCESS
 

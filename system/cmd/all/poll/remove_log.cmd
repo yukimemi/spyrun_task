@@ -7,15 +7,11 @@
   .DESCRIPTION
     古いログを削除する
   .INPUTS
-    - $mode: 動作モード
-             "register": タスク登録 (デフォルト)
-             "main": メイン処理
-    - $base: spyrun remote base path
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/04/01 17:19:17.
+  .Last Change : 2024/09/16 17:23:02.
 #>
-param([string]$mode = "register", [string]$base)
+param()
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
 $version = "20240401_171917"
@@ -70,7 +66,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version $mode $base)
+    $app = [PSCustomObject](Start-Init $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"

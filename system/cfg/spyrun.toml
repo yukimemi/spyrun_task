@@ -1,19 +1,19 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/09/15 11:16:04.
+# Last Change : 2024/09/16 19:19:25.
 # =============================================================================
 
 [vars]
 base_local = '{{ cfg_dir }}\..'
-base_remote = '{{ psf(arg="..\system\cfg\init.ps1") }}'
+base_remote = '{{ psf(arg="init.ps1") }}\system'
 
 cfg_remote_dir = '{{ base_remote }}\cfg'
 cfg_remote_path = '{{ base_remote }}\cfg\spyrun.toml'
 
 hostname = '{{ env(arg="COMPUTERNAME") }}'
 
-version = '20240915_111604'
+version = '20240916_191925'
 
 funcs = '''
 function log {
@@ -70,7 +70,6 @@ $copy = {
     $script:stopFlg = $true
   }
 }
-log "{{ base_remote }}"
 & $copy "{{ cfg_path }}" "{{ cfg_remote_path }}"
 if ($script:stopFlg) {
   "spy_name: [{{ spy_name }}] stop flg is true" | Set-Content "{{ stop_force_path }}"

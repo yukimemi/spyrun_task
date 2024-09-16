@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/15 00:35:23.
+  .Last Change : 2024/09/16 19:25:06.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -63,7 +63,7 @@ function New-Mutex {
     throw $_
   }
 
-  $mutexName = "Global¥$($app.cmdName)_$($app.isLocal)_$($app.mode)"
+  $mutexName = "Global¥$($app.cmdName)_$($app.isLocal)"
   log "Create mutex name: [${mutexName}]"
   $mutex = New-Object System.Threading.Mutex($false, $mutexName)
 
@@ -241,28 +241,20 @@ function Ensure-ScheduledTask {
     throw $_
   }
 
-  $xml = [xml]$xmlStr
+  New-Item -Force -ItemType Directory $app.cmdLocalDir | Out-Null
+  Copy-Item -Force $app.cmdFile $app.cmdLocalFile
 
-  Get-ScheduledTask | Where-Object {
-    $_.URI -eq $xml.Task.RegistrationInfo.URI
-  } | Set-Variable exists
+  $registerXmlFile = [System.IO.Path]::Combine($app.spyrunBase, "task", "register", "$($app.cmdName).xml")
+  $xmlStr | Set-Content -Encoding utf8 $registerXmlFile
 
-  if ($null -eq $exists -or !(Test-Path $app.registerFlg)) {
-    New-Item -Force -ItemType Directory $app.cmdLocalDir | Out-Null
-    Copy-Item -Force $app.cmdFile $app.cmdLocalFile
-    $part = $xml.Task.RegistrationInfo.URI -split "\\"
-    $taskpath = $part[0..($part.Length - 2)] -join "\"
-    $taskname = $part[-1]
-    log "${taskpath}\${taskname} is not registered, or $($app.registerFlg) is not found, so Register-ScheduledTask !"
-    Register-ScheduledTask -Force -TaskPath $taskpath -TaskName $taskname -Xml $xmlStr | Out-Null
-    New-Item -Force -ItemType Directory (Split-Path -Parent $app.registerFlg) | Out-Null
-    New-Item -Force -ItemType File $app.registerFlg | Out-Null
-    $app.cmdFile | Set-Content -Force -Encoding utf8 $app.registerFlg
-    return $true
+  while ($true) {
+    if (Test-Path $registerXmlFile) {
+      log "Task is not registered ! so wait ..."
+      Start-Sleep -Seconds 1
+    } else {
+      break
+    }
   }
-
-  log "$($xml.Task.RegistrationInfo.URI) is already registered."
-  $false
 }
 
 <#
@@ -286,54 +278,17 @@ function Remove-ScheduledTask {
     throw $_
   }
 
-  $xml = [xml]$xmlStr
+  $unRegisterXmlFile = [System.IO.Path]::Combine($app.spyrunBase, "task", "unregister", "$($app.cmdName).xml")
+  $xmlStr | Set-Content -Encoding utf8 $unRegisterXmlFile
 
-  Get-ScheduledTask | Where-Object {
-    $_.URI -eq $xml.Task.RegistrationInfo.URI
-  } | Set-Variable exists
-
-  if ($null -eq $exists) {
-    log "$($xml.Task.RegistrationInfo.URI) is already removed !"
-    return
-  }
-
-  $part = $xml.Task.RegistrationInfo.URI -split "\\"
-  $taskpath = ($part[0..($part.Length - 2)] -join "\")
-  $taskname = $part[-1]
-  log "Unregister-ScheduledTask ${taskpath}\${taskname}"
-
-  $removeTasks = {
-    param([object]$folder)
-
-    if (![string]::IsNullOrEmpty($taskname)) {
-      $folder.GetTasks(1) | Where-Object {
-        $folder.Path -eq $taskpath -and $_.Name -eq $taskname
-      } | ForEach-Object {
-        log "Remove taskpath: [${taskpath}], taskname: [${taskname}]"
-        [void]$folder.DeleteTask($_.Name, $null)
-      }
-    }
-    if ([string]::IsNullOrEmpty($taskname)) {
-      $folder.GetFolders(1) | ForEach-Object {
-        & $removeTasks $_
-      }
-      $folder.GetTasks(1) | ForEach-Object {
-        [void]$folder.DeleteTask($_.Name, $null)
-      }
-      if ($folder.Path -eq $taskpath -and $taskpath -ne "\") {
-        log "Remove taskpath folder: [$taskpath]"
-        $sch = New-Object -ComObject Schedule.Service
-        [void]$sch.connect()
-        $rootFolder = $sch.GetFolder("\")
-        [void]$rootFolder.DeleteFolder($taskpath, $null)
-      }
+  while ($true) {
+    if (Test-Path $unRegisterXmlFile) {
+      log "Task is not unregistered ! so wait ..."
+      Start-Sleep -Seconds 1
+    } else {
+      break
     }
   }
-
-  $sch = New-Object -ComObject Schedule.Service
-  [void]$sch.connect()
-  $folder = $sch.GetFolder($taskpath)
-  & $removeTasks $folder
 }
 
 <#
@@ -450,54 +405,6 @@ function Convert-ArrayPropertyToString {
 
 <#
   .SYNOPSIS
-    Test-PathRemoteCmd
-  .DESCRIPTION
-    リモートファイルが存在するか
-    リモートファイルとローカルファイルの差分確認
-  .INPUTS
-    - app
-  .OUTPUTS
-    - $true: 存在する / 一致
-    - $false: 存在しない / 一致しない
-#>
-function Test-PathRemoteCmd {
-  [CmdletBinding()]
-  [OutputType([bool])]
-  param([PSCustomObject]$app)
-
-  trap {
-    log "[Test-PathRemoteCmd] Error $_" "Red"
-    throw $_
-  }
-
-  # リモートファイルの場合は存在するので true
-  if (!$app.isLocal) {
-    return $true
-  }
-
-  # タスク登録フラグが存在しない場合かつ、ローカル実行の場合は想定外
-  if (!(Test-Path $app.registerFlg)) {
-    throw "unreachable !!"
-  }
-
-  if (Test-Path $app.cmdRemoteFile) {
-    log "$($app.cmdRemoteFile) is found !"
-    # ハッシュチェック
-    $localHash = (Get-FileHash $app.cmdLocalFile).Hash
-    $remoteHash = (Get-FileHash $app.cmdRemoteFile).Hash
-    if ($localHash -ne $remoteHash) {
-      log "Mismatch hash ! local: [${localHash}], remote: [${remoteHash}]"
-      return $false
-    }
-    return $true
-  }
-
-  log "$($app.cmdRemoteFile) is not found !"
-  return $false
-}
-
-<#
-  .SYNOPSIS
     Wait-Spyrun
   .DESCRIPTION
     spyrun.exe のプロセス起動待ち
@@ -537,7 +444,6 @@ function Wait-Spyrun {
     Init 処理
   .INPUTS
     - version
-    - mode
   .OUTPUTS
     - $app
 #>
@@ -545,7 +451,7 @@ function Start-Init {
 
   [CmdletBinding()]
   [OutputType([object])]
-  param([string]$version, [string]$mode, [string]$base)
+  param([string]$version)
   trap {
     log "[Start-Init] Error $_" "Red"
     throw $_
@@ -564,7 +470,6 @@ function Start-Init {
   }
 
   $app.Add("version", $version)
-  $app.Add("mode", $mode)
   $app.Add("lock", $false)
 
   $app.Add("cmdFile", $cmdFullPath)
@@ -584,48 +489,38 @@ function Start-Init {
   $app.Add("spyrunName", [System.IO.Path]::GetFileNameWithoutExtension($app.spyrunFile))
   $app.Add("spyrunFileName", [System.IO.Path]::GetFileName($app.spyrunFile))
   $app.Add("spyrunBase", [System.IO.Path]::GetDirectoryName($app.spyrunDir))
-  $app.Add("registerFlg", [System.IO.Path]::Combine($app.spyrunBase, $app.userType, "flg", $app.scope, $app.watchMode, "$($app.cmdName)_${version}.flg"))
+  $app.Add("initFile", [System.IO.Path]::Combine($app.spyrunDir, "init.ps1"))
+  $app.Add("base", (. $app.initFile))
   $app.Add("cmdLocalFile", [System.IO.Path]::Combine($app.spyrunBase, $app.userType, "cmd", $app.scope, $app.watchMode, $app.cmdFileName))
   $app.Add("cmdLocalDir", [System.IO.Path]::GetDirectoryName($app.cmdLocalFile))
-  $app.Add("kickFile",  [System.IO.Path]::Combine($app.spyrunBase, $app.userType, "kick", $app.scope, $app.watchMode, "$($app.cmdName).flg"))
-  $app.Add("kickedFile",  [System.IO.Path]::Combine($app.spyrunBase, $app.userType, "kicked", $app.scope, $app.watchMode, "$($app.cmdName).flg"))
+  if ($app.scope -eq "all") {
+    $app.Add("cmdRemoteFile", [System.IO.Path]::Combine($app.base, $app.userType, "cmd", $app.scope, $app.watchMode, $app.cmdFileName))
+    $app.Add("cmdRemoteDir", [System.IO.Path]::GetDirectoryName($app.cmdRemoteFile))
+  } else {
+    $app.Add("cmdRemoteFile", [System.IO.Path]::Combine($app.base, $app.userType, "cmd", $app.scope, $app.watchMode, $env:COMPUTERNAME, $app.cmdFileName))
+    $app.Add("cmdRemoteDir", [System.IO.Path]::GetDirectoryName($app.cmdRemoteFile))
+  }
   $app.Add("isLocal", ($app.cmdFile -eq $app.cmdLocalFile))
-  $app.Add("stopFile", [System.IO.Path]::Combine($app.spyrunBase, $app.userType, "stop.flg"))
-  $app.Add("stopForceFile", [System.IO.Path]::Combine($app.spyrunBase, $app.userType, "stop_force.flg"))
-
-  # log
-  $app.Add("logDir", [System.IO.Path]::Combine($app.spyrunBase, $app.userType, "log"))
+  $app.Add("dat", [System.IO.Path]::Combine($app.base, "dat"))
+  $app.Add("clct", [System.IO.Path]::Combine($app.base, $app.userType, "clct"))
+  $app.Add("resultDir", [System.IO.Path]::Combine($app.base, $app.userType, "result", $app.cmdName))
+  $app.Add("resultPrefixFile", [System.IO.Path]::Combine($app.resultDir, "${env:COMPUTERNAME}_$($app.cmdName)"))
+  $app.Add("logDir", [System.IO.Path]::Combine($app.base, $app.userType, "log", $app.scope, $app.watchMode, $app.cmdName, $env:COMPUTERNAME))
   $app.Add("logFile", [System.IO.Path]::Combine($app.logDir, "$($app.cmdName)_$($app.now).log"))
   $app.Add("logName", [System.IO.Path]::GetFileNameWithoutExtension($app.logFile))
   $app.Add("logFileName", [System.IO.Path]::GetFileName($app.logFile))
   New-Item -Force -ItemType Directory $app.logDir | Out-Null
-
   Start-Transcript $app.logFile
 
-  # remote
-  if (Test-Path $app.registerFlg) {
-    $app.Add("cmdRemoteFile", (Get-Content -First 1 -Encoding utf8 $app.registerFlg))
-    $app.Add("cmdRemoteDir", [System.IO.Path]::GetDirectoryName($app.cmdRemoteFile))
-  }
-  if ($base) {
-    $app.Add("base", $base)
-    $app.Add("dat", [System.IO.Path]::Combine($app.base, "dat"))
-    $app.Add("clct", [System.IO.Path]::Combine($app.base, "clct"))
-    $app.Add("resultDir", [System.IO.Path]::Combine($app.clct, $app.cmdName, "result"))
-    $app.Add("resultPrefixFile", [System.IO.Path]::Combine($app.resultDir, "${env:COMPUTERNAME}_$($app.cmdName)"))
-  }
+  log "[Start-Init] base = $($app.base)"
+  log "[Start-Init] clct = $($app.clct)"
+  log "[Start-Init] resultDir = $($app.resultDir)"
 
   # const value.
   $app.Add("cnst", @{
       SUCCESS = 0
       ERROR   = 1
     })
-
-  # Update kickedFile.
-  if ($app.mode -eq "main") {
-    New-Item -Force -ItemType Directory (Split-Path -Parent $app.kickedFile) | Out-Null
-    Get-Date -f "yyyyMMddHHmmssfff" | Set-Content -Encoding utf8 $app.kickedFile
-  }
 
   # mutex check
   $app.Add("mutex", (New-Mutex $app))
@@ -652,37 +547,19 @@ function Start-MainBefore {
 
   log "[Start-MainBefore] Start"
 
-  if (!$app.isLocal -and $app.mode -eq "register") {
+  if (!$app.isLocal) {
     Ensure-ScheduledTask $app $xmlStr | Out-Null
     exit $app.cnst.SUCCESS
   }
 
-  if (![string]::IsNullorEmpty($app.cmdRemoteFile) -and !(Test-Path $app.cmdRemoteFile)) {
+  if (!(Test-Path $app.cmdRemoteFile)) {
+    log "$($app.cmdRemoteFile) is not found !" "Red"
     Remove-ScheduledTask $app $xmlStr
-    exit $app.cnst.SUCCESS
-  }
-
-  if ($app.mode -ne "main") {
-    log "Wait spyrun.exe ..."
-    Wait-Spyrun $app.userType
-    log "mode: [$($app.mode)], so create kick file."
-    $now = Get-Date -f "yyyyMMddHHmmssfff"
-    New-Item -Force -ItemType File $app.kickFile | Out-Null
-    Start-Sleep -Seconds 10
-    # Check kickedFile.
-    if (!(Test-Path $app.kickedFile)) {
-      return Start-MainBefore $app $xmlStr
-    }
-    $kickedTime = (Get-Content -Encoding utf8 $app.kickedFile).Trim()
-    if ($now -gt $kickedTime) {
-      return Start-MainBefore $app $xmlStr
-    }
     exit $app.cnst.SUCCESS
   }
 
   log "[Start-MainBefore] End"
   return $app.cnst.SUCCESS
-
 }
 
 

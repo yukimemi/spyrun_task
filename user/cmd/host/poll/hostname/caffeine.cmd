@@ -7,15 +7,11 @@
   .DESCRIPTION
     スリーブ抑止する
   .INPUTS
-    - $mode: 動作モード
-             "register": タスク登録 (デフォルト)
-             "main": メイン処理
-    - $base: spyrun remote base path
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/04/14 16:48:54.
+  .Last Change : 2024/09/16 18:43:14.
 #>
-param([string]$mode = "register", [string]$base, [bool]$async = $false)
+param([bool]$async = $false)
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
 $version = "20240414_164854"
@@ -40,7 +36,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version $mode $base)
+    $app = [PSCustomObject](Start-Init $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"
@@ -100,7 +96,7 @@ function Start-Main {
     # Execute main.
     if (!$async) {
       $launch = [System.IO.Path]::Combine($app.spyrunDir, "launch.js")
-      Start-Process -File "wscript.exe" -ArgumentList $launch, $app.cmdFile, $mode, $base, 1
+      Start-Process -File "wscript.exe" -ArgumentList $launch, $app.cmdFile, 1
       return $app.cnst.SUCCESS
     }
     log "[info] Currently ordering a double shot of espresso..."

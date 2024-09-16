@@ -1,19 +1,19 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/09/15 01:51:03.
+# Last Change : 2024/09/16 19:27:27.
 # =============================================================================
 
 [vars]
 base_local = '{{ cfg_dir }}\..'
-base_remote = '{{ psf(arg="..\user\cfg\init.ps1") }}'
+base_remote = '{{ psf(arg="init.ps1") }}\user'
 
 cfg_remote_dir = '{{ base_remote }}\cfg'
 cfg_remote_path = '{{ base_remote }}\cfg\spyrun.toml'
 
 hostname = '{{ env(arg="COMPUTERNAME") }}'
 
-version = '20240915_015103'
+version = '20240916_192727'
 
 funcs = '''
 function log {

@@ -1,7 +1,7 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/09/16 03:05:07.
+# Last Change : 2024/09/16 19:19:00.
 # =============================================================================
 
 [vars]
@@ -40,7 +40,7 @@ stop_force_path_user = '{{ stop_dir_user }}\stop_force.flg'
 
 sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$'
 
-version = '20240916_030507'
+version = '20240916_191900'
 
 funcs = '''
 function log {
@@ -130,16 +130,13 @@ New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\host\poll\{{ h
 New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\host\notify\{{ hostname }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\host\poll\{{ hostname }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\host\notify\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\task\register" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\task\unregister" | Out-Null
 
-icacls "{{ base_local_system }}" /grant EveryOne:F /t
-# icacls "{{ base_local_system }}\cmd" /grant EveryOne:F /t
-# icacls "{{ base_local_system }}\flg" /grant EveryOne:F /t
-# icacls "{{ base_local_system }}\log" /grant EveryOne:F /t
-
-icacls "{{ base_local_user }}" /grant EveryOne:F /t
-# icacls "{{ base_local_user }}\cmd" /grant EveryOne:F /t
-# icacls "{{ base_local_user }}\flg" /grant EveryOne:F /t
-# icacls "{{ base_local_user }}\log" /grant EveryOne:F /t
+icacls "{{ base_local }}/task" /grant EveryOne:F /t
+icacls "{{ base_local }}/user/cmd" /grant EveryOne:F /t
+icacls "{{ base_local }}/user/cfg" /grant EveryOne:F /t
+icacls "{{ base_local }}/user/log" /grant EveryOne:F /t
 '''
 
 [cfg]
@@ -188,35 +185,6 @@ arg = [
   Ensure-ScheduledTask "\spyrun\system\spyrun" "\spyrun\system" "spyrun" "PT5M" "00:05:00" "{{ cmd_path }}" '-c "{{ cfg_local_path_system }}"' $true
   Ensure-ScheduledTask "\spyrun\user\spyrun" "\spyrun\user" "spyrun" "PT5M" "00:05:00" "C:\Windows\system32\wscript.exe" "`"{{ cmd_dir }}\launch.js`" `"{{ cmd_path }}`" -c `"{{ cfg_local_path_user }}`"" $false
 
-  $taskService = New-Object -ComObject "Schedule.Service"
-  $taskService.Connect()
-
-  $rootFolder = $taskService.GetFolder("\")
-
-  try { $rootFolder.CreateFolder("spyrun\user\all\poll") } catch {}
-  try { $rootFolder.CreateFolder("spyrun\user\all\notify") } catch {}
-  try { $rootFolder.CreateFolder("spyrun\user\host\poll") } catch {}
-  try { $rootFolder.CreateFolder("spyrun\user\host\notify") } catch {}
-
-  function Set-SecurityDescriptor {
-    param([string]$path)
-    $taskFolder = $rootFolder.GetFolder($path)
-    # $taskFolder.SetSecurityDescriptor($taskFolder.GetSecurityDescriptor(0xf) + "(A;;0x1f019f;;;BU)", 0)
-    # $taskFolder.SetSecurityDescriptor($taskFolder.GetSecurityDescriptor(0xf) + "(A;CIID;FA;;;BU)(A;CIID;FW;;;BU)(A;OIIOID;0x1f019f;;;BU)", 0)
-    $taskFolder.SetSecurityDescriptor($taskFolder.GetSecurityDescriptor(0xf) + "(A;;FA;;;BU)", 0)
-  }
-
-  Set-SecurityDescriptor "spyrun"
-  Set-SecurityDescriptor "spyrun\user"
-  Set-SecurityDescriptor "spyrun\user\all"
-  Set-SecurityDescriptor "spyrun\user\host"
-  Set-SecurityDescriptor "spyrun\user\all\poll"
-  Set-SecurityDescriptor "spyrun\user\all\notify"
-  Set-SecurityDescriptor "spyrun\user\host\poll"
-  Set-SecurityDescriptor "spyrun\user\host\notify"
-
-  # $securityDescriptorString = $folder.GetSecurityDescriptor(0xf) + "(A;;FA;;;BU)(A;CIID;FA;;;BU)(A;OICIIOID;FA;;;BU)"
-
   {{ z_init_fn }}
 }''',
 ]
@@ -235,3 +203,123 @@ arg = ['-NoProfile', '-Command', '''& {
   {{ trap_stop_force }}
   {{ z_init_fn }}
 }''']
+
+# Register task
+[[spys]]
+name = 'register_task'
+input = '{{ base_local }}\task\register'
+output = '{{ base_remote }}\log\task\register\{{ event_stem }}\{{ hostname }}'
+debounce = 5000
+[spys.poll]
+interval = 10000
+[spys.walk]
+pattern = '\.xml$'
+[[spys.patterns]]
+pattern = '\.xml$'
+cmd = 'powershell'
+arg = ['-NoProfile', '-Command', '''& {
+  {{ funcs }}
+  {{ trap_no_stop }}
+
+  log "event_path: {{ event_path }}"
+  $xmlStr = [string](Get-Content -Encoding utf8 '{{ event_path }}')
+  log "xmlStr: ${xmlStr}"
+  $xml = [xml]$xmlStr
+
+  $hash = (Get-FileHash '{{ event_path }}').Hash
+  $saveHashPath = '{{ base_local }}\task\hash\{{ event_stem }}.hash'
+
+  Get-ScheduledTask | Where-Object {
+    $_.URI -eq $xml.Task.RegistrationInfo.URI
+  } | Set-Variable exists
+
+  if ($exists -and (Test-Path $saveHashPath) -and ((Get-Content $saveHashPath).Trim() -eq $hash)) {
+    log "Skip Register-ScheduledTask ! hash: ${hash}"
+    Remove-Item -Force '{{ event_path }}'
+    return
+  }
+
+  $part = $xml.Task.RegistrationInfo.URI -split "\\"
+  $taskpath = $part[0..($part.Length - 2)] -join "\"
+  $taskname = $part[-1]
+  log "Register-ScheduledTask ${taskpath}\${taskname} !"
+  Register-ScheduledTask -Force -TaskPath $taskpath -TaskName $taskname -Xml $xmlStr | Out-Null
+
+  New-Item -Force -ItemType Directory (Split-Path -Parent $saveHashPath) | Out-Null
+  $hash | Set-Content $saveHashPath
+  Remove-Item -Force '{{ event_path }}'
+}''']
+
+# UnRegister task
+[[spys]]
+name = 'unregister_task'
+input = '{{ base_local }}\task\unregister'
+output = '{{ base_remote }}\log\task\unregister\{{ event_stem }}\{{ hostname }}'
+debounce = 5000
+[spys.poll]
+interval = 10000
+[spys.walk]
+pattern = '\.xml$'
+[[spys.patterns]]
+pattern = '\.xml$'
+cmd = 'powershell'
+arg = ['-NoProfile', '-Command', '''& {
+  {{ funcs }}
+  {{ trap_no_stop }}
+
+  log "event_path: {{ event_path }}"
+  $xmlStr = [string](Get-Content -Encoding utf8 '{{ event_path }}')
+  log "xmlStr: ${xmlStr}"
+  $xml = [xml]$xmlStr
+
+  Get-ScheduledTask | Where-Object {
+    $_.URI -eq $xml.Task.RegistrationInfo.URI
+  } | Set-Variable exists
+
+  if ($null -eq $exists) {
+    log "$($xml.Task.RegistrationInfo.URI) is already removed !"
+    Remove-Item -Force '{{ event_path }}'
+    return
+  }
+
+  $part = $xml.Task.RegistrationInfo.URI -split "\\"
+  $taskpath = ($part[0..($part.Length - 2)] -join "\")
+  $taskname = $part[-1]
+  log "Unregister-ScheduledTask ${taskpath}\${taskname}"
+
+  $removeTasks = {
+    param([object]$folder)
+
+    if (![string]::IsNullOrEmpty($taskname)) {
+      $folder.GetTasks(1) | Where-Object {
+        $folder.Path -eq $taskpath -and $_.Name -eq $taskname
+      } | ForEach-Object {
+        log "Remove taskpath: [${taskpath}], taskname: [${taskname}]"
+        [void]$folder.DeleteTask($_.Name, $null)
+      }
+    }
+    if ([string]::IsNullOrEmpty($taskname)) {
+      $folder.GetFolders(1) | ForEach-Object {
+        & $removeTasks $_
+      }
+      $folder.GetTasks(1) | ForEach-Object {
+        [void]$folder.DeleteTask($_.Name, $null)
+      }
+      if ($folder.Path -eq $taskpath -and $taskpath -ne "\") {
+        log "Remove taskpath folder: [$taskpath]"
+        $sch = New-Object -ComObject Schedule.Service
+        [void]$sch.connect()
+        $rootFolder = $sch.GetFolder("\")
+        [void]$rootFolder.DeleteFolder($taskpath, $null)
+      }
+    }
+  }
+
+  $sch = New-Object -ComObject Schedule.Service
+  [void]$sch.connect()
+  $folder = $sch.GetFolder($taskpath)
+  & $removeTasks $folder
+
+  Remove-Item -Force '{{ event_path }}'
+}''']
+
