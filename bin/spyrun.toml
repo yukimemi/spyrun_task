@@ -1,37 +1,46 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/08/24 19:12:11.
+# Last Change : 2024/09/16 03:05:07.
 # =============================================================================
 
 [vars]
 base_local = '{{ cmd_dir }}\..'
 base_local_system = '{{ base_local }}\system'
 base_local_user = '{{ base_local }}\user'
+
 base_remote = '{{ psf(arg="init.ps1") }}'
 base_remote_system = '{{ base_remote }}\system'
 base_remote_user = '{{ base_remote }}\user'
+
 cfg_local_dir_system = '{{ base_local_system }}\cfg'
 cfg_local_dir_user = '{{ base_local_user }}\cfg'
+
 cfg_local_path_system = '{{ cfg_local_dir_system }}\{{ cfg_name }}'
 cfg_local_path_user = '{{ cfg_local_dir_user }}\{{ cfg_name }}'
+
 cfg_remote_dir = '{{ base_remote }}\bin'
 cfg_remote_dir_system = '{{ base_remote_system }}\cfg'
 cfg_remote_dir_user = '{{ base_remote_user }}\cfg'
+
 cfg_remote_path = '{{ cfg_remote_dir }}\{{ cfg_name }}'
 cfg_remote_path_system = '{{ cfg_remote_dir_system }}\{{ cfg_name }}'
 cfg_remote_path_user = '{{ cfg_remote_dir_user }}\{{ cfg_name }}'
+
 cmd_remote_dir = '{{ base_remote }}\bin'
 cmd_remote_path = '{{ cmd_remote_dir }}\{{ cmd_name }}'
+
 hostname = '{{ env(arg="COMPUTERNAME") }}'
-kick_dir_system = '{{ base_local_system }}\kick'
-kick_dir_user = '{{ base_local_user }}\kick'
+
 stop_dir_system = '{{ base_local_system }}'
 stop_dir_user = '{{ base_local_user }}'
+
 stop_force_path_system = '{{ stop_dir_system }}\stop_force.flg'
 stop_force_path_user = '{{ stop_dir_user }}\stop_force.flg'
+
 sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$'
-version = '20240824_191211'
+
+version = '20240916_030507'
 
 funcs = '''
 function log {
@@ -92,7 +101,7 @@ $copy = {
         }
       }
       log "${remote} -> ${local}"
-      New-Item -Force -ItemType Directory (Split-Path -Parent $local)
+      New-Item -Force -ItemType Directory (Split-Path -Parent $local) | Out-Null
       Copy-Item -Force $remote $local
     }
     $script:stopFlg = $true
@@ -101,11 +110,11 @@ $copy = {
 & $copy "{{ cfg_path }}" "{{ cfg_remote_path }}"
 & $copy "{{ cmd_path }}" "{{ cmd_remote_path }}" $true
 & $copy "{{ cmd_dir }}\common.ps1" "{{ cmd_remote_dir }}\common.ps1"
-& $copy "{{ cmd_dir }}\PsExec64.exe" "{{ cmd_remote_dir }}\PsExec64.exe"
 & $copy "{{ cmd_dir }}\launch.js" "{{ cmd_remote_dir }}\launch.js"
+& $copy "{{ cmd_dir }}\init.ps1" "{{ cmd_remote_dir }}\init.ps1"
 
-& $copy "{{ cfg_local_path_system }}" "{{ cfg_remote_path_system }}"
-& $copy "{{ cfg_local_path_user }}" "{{ cfg_remote_path_user }}"
+& robocopy /e "{{ cfg_remote_dir_system }}" "{{ cfg_local_dir_system }}"
+& robocopy /e "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }}"
 
 if ($script:stopFlg) {
   "spy_name: [{{ spy_name }}] stop flg is true" | Set-Content "{{ stop_force_path }}"
@@ -122,27 +131,15 @@ New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\host\notify\{{
 New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\host\poll\{{ hostname }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\host\notify\{{ hostname }}" | Out-Null
 
-New-Item -Force -ItemType Directory "{{ kick_dir_system }}\all\poll" | Out-Null
-New-Item -Force -ItemType Directory "{{ kick_dir_system }}\all\notify" | Out-Null
-New-Item -Force -ItemType Directory "{{ kick_dir_system }}\host\poll" | Out-Null
-New-Item -Force -ItemType Directory "{{ kick_dir_system }}\host\notify" | Out-Null
+icacls "{{ base_local_system }}" /grant EveryOne:F /t
+# icacls "{{ base_local_system }}\cmd" /grant EveryOne:F /t
+# icacls "{{ base_local_system }}\flg" /grant EveryOne:F /t
+# icacls "{{ base_local_system }}\log" /grant EveryOne:F /t
 
-New-Item -Force -ItemType Directory "{{ kick_dir_user }}\all\poll" | Out-Null
-New-Item -Force -ItemType Directory "{{ kick_dir_user }}\all\notify" | Out-Null
-New-Item -Force -ItemType Directory "{{ kick_dir_user }}\host\poll" | Out-Null
-New-Item -Force -ItemType Directory "{{ kick_dir_user }}\host\notify" | Out-Null
-
-icacls "{{ base_local_system }}\cmd" /grant EveryOne:F /t
-icacls "{{ base_local_system }}\flg" /grant EveryOne:F
-icacls "{{ base_local_system }}\kick" /grant EveryOne:F /t
-icacls "{{ base_local_system }}\kicked" /grant EveryOne:F /t
-icacls "{{ base_local_system }}\log" /grant EveryOne:F /t
-
-icacls "{{ base_local_user }}\cmd" /grant EveryOne:F /t
-icacls "{{ base_local_user }}\flg" /grant EveryOne:F
-icacls "{{ base_local_user }}\kick" /grant EveryOne:F /t
-icacls "{{ base_local_user }}\kicked" /grant EveryOne:F /t
-icacls "{{ base_local_user }}\log" /grant EveryOne:F /t
+icacls "{{ base_local_user }}" /grant EveryOne:F /t
+# icacls "{{ base_local_user }}\cmd" /grant EveryOne:F /t
+# icacls "{{ base_local_user }}\flg" /grant EveryOne:F /t
+# icacls "{{ base_local_user }}\log" /grant EveryOne:F /t
 '''
 
 [cfg]
@@ -190,6 +187,35 @@ arg = [
   Ensure-ScheduledTask "\spyrun\spyrun" "\spyrun" "spyrun" "PT5M" "00:05:00" "{{ cmd_path }}" '' $true
   Ensure-ScheduledTask "\spyrun\system\spyrun" "\spyrun\system" "spyrun" "PT5M" "00:05:00" "{{ cmd_path }}" '-c "{{ cfg_local_path_system }}"' $true
   Ensure-ScheduledTask "\spyrun\user\spyrun" "\spyrun\user" "spyrun" "PT5M" "00:05:00" "C:\Windows\system32\wscript.exe" "`"{{ cmd_dir }}\launch.js`" `"{{ cmd_path }}`" -c `"{{ cfg_local_path_user }}`"" $false
+
+  $taskService = New-Object -ComObject "Schedule.Service"
+  $taskService.Connect()
+
+  $rootFolder = $taskService.GetFolder("\")
+
+  try { $rootFolder.CreateFolder("spyrun\user\all\poll") } catch {}
+  try { $rootFolder.CreateFolder("spyrun\user\all\notify") } catch {}
+  try { $rootFolder.CreateFolder("spyrun\user\host\poll") } catch {}
+  try { $rootFolder.CreateFolder("spyrun\user\host\notify") } catch {}
+
+  function Set-SecurityDescriptor {
+    param([string]$path)
+    $taskFolder = $rootFolder.GetFolder($path)
+    # $taskFolder.SetSecurityDescriptor($taskFolder.GetSecurityDescriptor(0xf) + "(A;;0x1f019f;;;BU)", 0)
+    # $taskFolder.SetSecurityDescriptor($taskFolder.GetSecurityDescriptor(0xf) + "(A;CIID;FA;;;BU)(A;CIID;FW;;;BU)(A;OIIOID;0x1f019f;;;BU)", 0)
+    $taskFolder.SetSecurityDescriptor($taskFolder.GetSecurityDescriptor(0xf) + "(A;;FA;;;BU)", 0)
+  }
+
+  Set-SecurityDescriptor "spyrun"
+  Set-SecurityDescriptor "spyrun\user"
+  Set-SecurityDescriptor "spyrun\user\all"
+  Set-SecurityDescriptor "spyrun\user\host"
+  Set-SecurityDescriptor "spyrun\user\all\poll"
+  Set-SecurityDescriptor "spyrun\user\all\notify"
+  Set-SecurityDescriptor "spyrun\user\host\poll"
+  Set-SecurityDescriptor "spyrun\user\host\notify"
+
+  # $securityDescriptorString = $folder.GetSecurityDescriptor(0xf) + "(A;;FA;;;BU)(A;CIID;FA;;;BU)(A;OICIIOID;FA;;;BU)"
 
   {{ z_init_fn }}
 }''',
