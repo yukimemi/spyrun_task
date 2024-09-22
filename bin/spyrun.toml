@@ -209,9 +209,6 @@ arg = ['-NoProfile', '-Command', '''& {
 name = 'register_task'
 input = '{{ base_local }}\task\register'
 output = '{{ base_remote }}\log\task\register\{{ event_stem }}\{{ hostname }}'
-debounce = 5000
-[spys.poll]
-interval = 10000
 [spys.walk]
 pattern = '\.xml$'
 [[spys.patterns]]
@@ -255,9 +252,6 @@ arg = ['-NoProfile', '-Command', '''& {
 name = 'unregister_task'
 input = '{{ base_local }}\task\unregister'
 output = '{{ base_remote }}\log\task\unregister\{{ event_stem }}\{{ hostname }}'
-debounce = 5000
-[spys.poll]
-interval = 10000
 [spys.walk]
 pattern = '\.xml$'
 [[spys.patterns]]
