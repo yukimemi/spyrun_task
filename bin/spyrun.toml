@@ -1,7 +1,7 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/09/16 19:19:00.
+# Last Change : 2024/09/22 22:30:36.
 # =============================================================================
 
 [vars]
@@ -40,7 +40,7 @@ stop_force_path_user = '{{ stop_dir_user }}\stop_force.flg'
 
 sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$'
 
-version = '20240916_191900'
+version = '20240922_223036'
 
 funcs = '''
 function log {
