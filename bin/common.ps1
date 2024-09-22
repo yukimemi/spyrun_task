@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/16 19:25:06.
+  .Last Change : 2024/09/21 18:04:50.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -221,6 +221,58 @@ function Execute-Process {
 
 <#
   .SYNOPSIS
+    Check-FileHash
+  .DESCRIPTION
+    ハッシュを比較する
+  .INPUTS
+    - src
+    - dst
+  .OUTPUTS
+    - bool
+#>
+function Check-FileHash {
+  [CmdletBinding()]
+  [OutputType([bool])]
+  param([string]$src, [string]$dst)
+
+  if (!(Test-Path $src)) {
+    return $false
+  }
+  if (!(Test-Path $dst)) {
+    return $false
+  }
+
+  $srcHash = (Get-FileHash $src).Hash
+  $dstHash = (Get-FileHash $dst).Hash
+
+  return $srcHash -eq $dstHash
+}
+
+<#
+  .SYNOPSIS
+    Copy-File
+  .DESCRIPTION
+    ハッシュが違う場合はファイルをコピーする
+  .INPUTS
+    - src
+    - dst
+  .OUTPUTS
+    - None
+#>
+function Copy-File {
+  [CmdletBinding()]
+  [OutputType([void])]
+  param([string]$src, [string]$dst)
+
+  if (!(Check-FileHash $src $dst)) {
+    log "Copy-File: $src -> $dst"
+    New-Item -Force -ItemType Directory ([System.IO.Path]::GetDirectoryName($dst)) | Out-Null
+    Copy-Item -Force $src $dst
+  }
+}
+
+<#
+  .SYNOPSIS
     Ensure-ScheduledTask
   .DESCRIPTION
     タスクスケジューラ未登録の場合は登録する
@@ -241,8 +293,7 @@ function Ensure-ScheduledTask {
     throw $_
   }
 
-  New-Item -Force -ItemType Directory $app.cmdLocalDir | Out-Null
-  Copy-Item -Force $app.cmdFile $app.cmdLocalFile
+  Copy-File $app.cmdRemoteFile $app.cmdLocalFile
 
   $registerXmlFile = [System.IO.Path]::Combine($app.spyrunBase, "task", "register", "$($app.cmdName).xml")
   $xmlStr | Set-Content -Encoding utf8 $registerXmlFile
@@ -555,6 +606,11 @@ function Start-MainBefore {
   if (!(Test-Path $app.cmdRemoteFile)) {
     log "$($app.cmdRemoteFile) is not found !" "Red"
     Remove-ScheduledTask $app $xmlStr
+    exit $app.cnst.SUCCESS
+  }
+
+  if (!(Check-FileHash $app.cmdLocalFile $app.cmdRemoteFile)) {
+    log "$($app.cmdLocalFile) is not same as $($app.cmdRemoteFile) !" "Red"
     exit $app.cnst.SUCCESS
   }
 
