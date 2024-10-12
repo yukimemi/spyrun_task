@@ -7,14 +7,16 @@
   .DESCRIPTION
     OneDrive のファイルをアップロードする
   .INPUTS
+    - mode: "register": タスク登録, "main": 処理実行
+    - async: "true": 非同期実行, "false": 同期実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/17 00:35:17.
+  .Last Change: 2024/10/12 16:41:23.
 #>
-param([bool]$async = $false)
+param([string]$mode = "register", [bool]$async = $false)
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20240917_003517"
+$version = "20241012_164123"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -36,7 +38,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version)
+    $app = [PSCustomObject](Start-Init $mode $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"
@@ -48,12 +50,12 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT30M</Interval>
+        <Interval>PT1H</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
       <Enabled>true</Enabled>
-      <RandomDelay>PT3H</RandomDelay>
+      <RandomDelay>PT1H</RandomDelay>
     </TimeTrigger>
     <LogonTrigger>
       <Enabled>true</Enabled>
@@ -93,17 +95,23 @@ function Start-Main {
   <Actions Context="Author">
     <Exec>
       <Command>C:\Windows\system32\wscript.exe</Command>
-      <Arguments>"$($app.spyrunDir)\launch.js" "$($app.cmdLocalFile)"</Arguments>
-      <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
+      <Arguments>"$($app.spyrunDir)\launch.js" "$($app.cmdFile)" main</Arguments>
+      <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
 "@
 
-    Start-MainBefore $app $xmlStr
+    if ($app.mode -eq "register") {
+      Ensure-ScheduledTask $app $xmlStr | Out-Null
+      exit $app.cnst.SUCCESS
+    }
 
     # Execute main.
-    Execute-Process "attrib" "+u /s `"${env:OneDrive}`""
+    $result = Execute-Process "attrib" "+u /s `"${env:OneDrive}`""
+    log "code: $($result.code)"
+    log "stdout: $($result.stdout)"
+    log "stderr: $($result.stderr)"
 
     return $app.cnst.SUCCESS
 

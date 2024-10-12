@@ -1,19 +1,13 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/09/16 19:27:27.
+# Last Change : 2024/10/12 00:21:21.
 # =============================================================================
 
 [vars]
 base_local = '{{ cfg_dir }}\..'
-base_remote = '{{ psf(arg="init.ps1") }}\user'
-
-cfg_remote_dir = '{{ base_remote }}\cfg'
-cfg_remote_path = '{{ base_remote }}\cfg\spyrun.toml'
-
 hostname = '{{ env(arg="COMPUTERNAME") }}'
-
-version = '20240916_192727'
+version = '20241012_002121'
 
 funcs = '''
 function log {
@@ -37,7 +31,7 @@ log "spy_name: [{{ spy_name }}]"
 $ErrorActionPreference = "Stop"
 trap {
   log "{{ spy_name }} Error ! $_"
-  "spy_name: [{{ spy_name }}] $_" | Set-Content "{{ stop_path }}"
+  "spy_name: [{{ spy_name }}] $_" | Set-Content -Encoding utf8 "{{ stop_path }}"
 }
 '''
 
@@ -46,33 +40,7 @@ log "spy_name: [{{ spy_name }}]"
 $ErrorActionPreference = "Stop"
 trap {
   log "{{ spy_name }} Error ! $_"
-  "spy_name: [{{ spy_name }}] $_" | Set-Content "{{ stop_force_path }}"
-}
-'''
-
-z_init_fn = '''
-$script:stopFlg = $false
-$copy = {
-  param([string]$local, [string]$remote)
-  $localHash = (Get-FileHash $local).Hash
-  $remoteHash = (Get-FileHash $remote).Hash
-  if ($remoteHash -ne $localHash) {
-    if ($local -match "_backup") {
-      $local = $local.Replace("_backup", "")
-      $localHash = (Get-FileHash $local).Hash
-      if ($localHash -eq $remoteHash) {
-        return
-      }
-    }
-    log "${remote} -> ${local}"
-    New-Item -Force -ItemType Directory (Split-Path -Parent $local) | Out-Null
-    Copy-Item -Force $remote $local
-    $script:stopFlg = $true
-  }
-}
-& $copy "{{ cfg_path }}" "{{ cfg_remote_path }}"
-if ($script:stopFlg) {
-  "spy_name: [{{ spy_name }}] stop flg is true" | Set-Content "{{ stop_force_path }}"
+  "spy_name: [{{ spy_name }}] $_" | Set-Content -Encoding utf8 "{{ stop_force_path }}"
 }
 '''
 
@@ -89,14 +57,13 @@ arg = ['-NoProfile', '-Command', '''& {
   {{ funcs }}
   {{ trap_stop_force }}
   log "{{ version }}"
-  {{ z_init_fn }}
 }''']
 
 # Update cfg toml when there is a change.
 [[spys]]
-name = 'update_toml'
-input = '{{ cfg_remote_dir }}'
-output = '{{ log_dir }}\{{ spy_name }}'
+name = 'update_cfg'
+input = '{{ cfg_dir }}'
+output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 debounce = 5000
 [[spys.patterns]]
 pattern = '\.toml$'
@@ -104,14 +71,14 @@ cmd = 'powershell'
 arg = ['-NoProfile', '-Command', '''& {
   {{ funcs }}
   {{ trap_stop_force }}
-  {{ z_init_fn }}
+  throw "Update config {{ event_path }}"
 }''']
 
 # Execute under cmd/all/poll
 [[spys]]
 name = 'user_all_poll'
-input = '{{ base_remote }}\cmd\all\poll'
-output = '{{ base_remote }}\log\all\poll\{{ event_stem }}\{{ hostname }}'
+input = '{{ base_local }}\cmd\all\poll'
+output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 debounce = 5000
 [spys.poll]
 interval = 10000
@@ -122,8 +89,8 @@ pattern = '\.cmd$|\.exe$|\.bat$'
 # Execute under cmd/all/notify
 [[spys]]
 name = 'user_all_notify'
-input = '{{ base_remote }}\cmd\all\notify'
-output = '{{ base_remote }}\log\all\notify\{{ event_stem }}\{{ hostname }}'
+input = '{{ base_local }}\cmd\all\notify'
+output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 throttle = 5000
 [spys.walk]
 delay = [0, 60000]
@@ -132,8 +99,8 @@ pattern = '\.cmd$|\.exe$|\.bat$'
 # Execute under cmd/host/poll
 [[spys]]
 name = 'user_host_poll'
-input = '{{ base_remote }}\cmd\host\poll\{{ hostname }}'
-output = '{{ base_remote }}\log\host\poll\{{ event_stem }}\{{ hostname }}'
+input = '{{ base_local }}\cmd\host\poll\{{ hostname }}'
+output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 debounce = 5000
 [spys.poll]
 interval = 10000
@@ -144,9 +111,9 @@ pattern = '\.cmd$|\.exe$|\.bat$'
 # Execute under cmd/host/notify
 [[spys]]
 name = 'user_host_notify'
-input = '{{ base_remote }}\cmd\host\notify\{{ hostname }}'
-output = '{{ base_remote }}\log\host\notify\{{ event_stem }}\{{ hostname }}'
+input = '{{ base_local }}\cmd\host\notify\{{ hostname }}'
+output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 throttle = 5000
 [spys.walk]
+delay = [0, 60000]
 pattern = '\.cmd$|\.exe$|\.bat$'
-

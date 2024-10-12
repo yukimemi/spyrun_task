@@ -7,14 +7,15 @@
   .DESCRIPTION
     古いログを削除する
   .INPUTS
+    - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/16 17:23:02.
+  .Last Change: 2024/10/12 16:38:54.
 #>
-param()
+param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20240401_171917"
+$version = "20241012_163854"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -31,6 +32,8 @@ $version = "20240401_171917"
 function Remove-OldFile {
   [CmdletBinding()]
   param([string]$path, [datetime]$thresold)
+
+  log "[Remove-OldFile] path: [${path}]"
 
   Get-ChildItem -Force -Recurse -File $path -ea Continue | Where-Object {
     trap {
@@ -66,7 +69,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version)
+    $app = [PSCustomObject](Start-Init $mode $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"
@@ -78,12 +81,12 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT1H</Interval>
+        <Interval>PT3H</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
       <Enabled>true</Enabled>
-      <RandomDelay>PT1H</RandomDelay>
+      <RandomDelay>PT3H</RandomDelay>
     </TimeTrigger>
     <BootTrigger>
       <Enabled>true</Enabled>
@@ -122,23 +125,29 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$($app.cmdLocalFile)</Command>
-      <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
+      <Command>$($app.cmdFile)</Command>
+      <Arguments>main</Arguments>
+      <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
 "@
 
-    Start-MainBefore $app $xmlStr
+    if ($app.mode -eq "register") {
+      Ensure-ScheduledTask $app $xmlStr | Out-Null
+      exit $app.cnst.SUCCESS
+    }
 
     # Execute main.
-    $thresold = (Get-Date).AddHours(-3)
-    $systemLogPath = [System.IO.Path]::Combine($app.spyrunBase, "system", "log")
-    Remove-OldFile $systemLogPath $thresold
-    $userLogPath = [System.IO.Path]::Combine($app.spyrunBase, "user", "log")
-    Remove-OldFile $userLogPath $thresold
+    $thresold = (Get-Date).AddHours(-2)
+    $baseLogDir = [System.IO.Path]::Combine($app.baseLocal, "log")
+    Remove-OldFile $baseLogDir $thresold
+    $systemLogDir = [System.IO.Path]::Combine($app.baseLocal, "system", "log")
+    Remove-OldFile $systemLogDir $thresold
+    $userLogDir = [System.IO.Path]::Combine($app.baseLocal, "user", "log")
+    Remove-OldFile $userLogDir $thresold
+
     # Remove logDir files.
-    log $app.logDir
     Remove-OldFile $app.logDir $thresold
 
     return $app.cnst.SUCCESS
@@ -162,8 +171,4 @@ function Start-Main {
 # Call main.
 exit Start-Main
 
-
-
-
-
-
+# vim: ft=ps1

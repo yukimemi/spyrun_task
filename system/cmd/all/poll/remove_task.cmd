@@ -7,14 +7,15 @@
   .DESCRIPTION
     不要なタスクの削除を行う
   .INPUTS
+    - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/17 00:17:31.
+  .Last Change : 2024/10/12 16:40:03.
 #>
-param()
+param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20240917_001731"
+$version = "20241012_164003"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -36,7 +37,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version)
+    $app = [PSCustomObject](Start-Init $mode $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"
@@ -48,7 +49,7 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT15M</Interval>
+        <Interval>PT3H</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
@@ -92,15 +93,20 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$($app.cmdLocalFile)</Command>
-      <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
+      <Command>$($app.cmdFile)</Command>
+      <Arguments>main</Arguments>
+      <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
 "@
 
-    Start-MainBefore $app $xmlStr
+    if ($app.mode -eq "register") {
+      Ensure-ScheduledTask $app $xmlStr | Out-Null
+      exit $app.cnst.SUCCESS
+    }
 
+    # Execute main.
     $sch = New-Object -ComObject Schedule.Service
     [void]$sch.connect()
 
@@ -135,7 +141,6 @@ function Start-Main {
       }
     }
 
-    # Execute main.
     Get-ScheduledTask | Where-Object {
       $_.URI -match "^\\spyrun"
     } | Where-Object {
@@ -148,13 +153,13 @@ function Start-Main {
       log $_.URI
       $cmdPath = $_.URI
       if ($cmdPath -match "^\\spyrun\\system") {
-        $cmdPath = [System.IO.Path]::Combine($app.base, "$($cmdPath -replace '^\\spyrun\\system', 'system\cmd')")
+        $cmdPath = [System.IO.Path]::Combine($app.baseLocal, "$($cmdPath -replace '^\\spyrun\\system', 'system\cmd')")
       }
       if ($cmdPath -match "^\\spyrun\\user") {
-        $cmdPath = [System.IO.Path]::Combine($app.base, "$($cmdPath -replace '^\\spyrun\\user', 'user\cmd')")
+        $cmdPath = [System.IO.Path]::Combine($app.baseLocal, "$($cmdPath -replace '^\\spyrun\\user', 'user\cmd')")
       }
       if ($cmdPath -match "\\host\\") {
-        $cmdPath = [System.IO.Path]::Combine($app.base, "$($cmdPath -replace '\\host\\([^\\]+)\\', `"\host\`$1\${env:COMPUTERNAME}\`")")
+        $cmdPath = [System.IO.Path]::Combine($app.baseLocal, "$($cmdPath -replace '\\host\\([^\\]+)\\', `"\host\`$1\${env:COMPUTERNAME}\`")")
       }
       $cmdPath += ".cmd"
       if (Test-Path $cmdPath) {

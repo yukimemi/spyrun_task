@@ -7,14 +7,16 @@
   .DESCRIPTION
     cmd を実行する
   .INPUTS
+    - mode: "register": タスク登録, "main": 処理実行
+    - async: "true": 非同期実行, "false": 同期実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/24 01:02:14.
+  .Last Change: 2024/10/12 16:41:02.
 #>
-param([bool]$async = $false)
+param([string]$mode = "register", [bool]$async = $false)
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20240924_010214"
+$version = "20241012_164102"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -36,7 +38,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version)
+    $app = [PSCustomObject](Start-Init $mode $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"
@@ -48,12 +50,12 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT15M</Interval>
+        <Interval>PT1H</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
       <Enabled>true</Enabled>
-      <RandomDelay>PT15M</RandomDelay>
+      <RandomDelay>PT1H</RandomDelay>
     </TimeTrigger>
     <LogonTrigger>
       <Enabled>true</Enabled>
@@ -93,20 +95,23 @@ function Start-Main {
   <Actions Context="Author">
     <Exec>
       <Command>C:\Windows\system32\wscript.exe</Command>
-      <Arguments>"$($app.spyrunDir)\launch.js" "$($app.cmdLocalFile)"</Arguments>
-      <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
+      <Arguments>"$($app.spyrunDir)\launch.js" "$($app.cmdFile)" main</Arguments>
+      <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
 "@
 
-    Start-MainBefore $app $xmlStr
+    if ($app.mode -eq "register") {
+      Ensure-ScheduledTask $app $xmlStr | Out-Null
+      exit $app.cnst.SUCCESS
+    }
 
     # Execute main.
     @(
-      ([System.IO.Path]::Combine($app.base, "user", "cmd", "all")),
-      ([System.IO.Path]::Combine($app.base, "user", "cmd", "host", "notify", $env:COMPUTERNAME)),
-      ([System.IO.Path]::Combine($app.base, "user", "cmd", "host", "poll", $env:COMPUTERNAME))
+      ([System.IO.Path]::Combine($app.baseLocal, "user", "cmd", "all")),
+      ([System.IO.Path]::Combine($app.baseLocal, "user", "cmd", "host", "notify", $env:COMPUTERNAME)),
+      ([System.IO.Path]::Combine($app.baseLocal, "user", "cmd", "host", "poll", $env:COMPUTERNAME))
     ) | ForEach-Object {
       Get-ChildItem -Force -Recurse -File $_ | Where-Object {
         $_.Extension -eq ".cmd"

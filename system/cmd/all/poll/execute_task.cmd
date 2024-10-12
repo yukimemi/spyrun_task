@@ -7,14 +7,15 @@
   .DESCRIPTION
     cmd を実行する
   .INPUTS
+    - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/24 01:00:31.
+  .Last Change: 2024/10/12 16:39:36.
 #>
-param()
+param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20240924_010031"
+$version = "20241012_163936"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -36,7 +37,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version)
+    $app = [PSCustomObject](Start-Init $mode $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"
@@ -48,12 +49,12 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT15M</Interval>
+        <Interval>PT1H</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
       <Enabled>true</Enabled>
-      <RandomDelay>PT15M</RandomDelay>
+      <RandomDelay>PT1H</RandomDelay>
     </TimeTrigger>
     <BootTrigger>
       <Enabled>true</Enabled>
@@ -66,10 +67,10 @@ function Start-Main {
     </Principal>
   </Principals>
   <Settings>
-    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>false</AllowHardTerminate>
+    <AllowHardTerminate>true</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
     <IdleSettings>
@@ -83,7 +84,7 @@ function Start-Main {
     <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <WakeToRun>true</WakeToRun>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>
     <Priority>7</Priority>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
@@ -92,20 +93,24 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$($app.cmdLocalFile)</Command>
-      <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
+      <Command>$($app.cmdFile)</Command>
+      <Arguments>main</Arguments>
+      <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
 "@
 
-    Start-MainBefore $app $xmlStr
+    if ($app.mode -eq "register") {
+      Ensure-ScheduledTask $app $xmlStr | Out-Null
+      exit $app.cnst.SUCCESS
+    }
 
     # Execute main.
     @(
-      ([System.IO.Path]::Combine($app.base, "system", "cmd", "all")),
-      ([System.IO.Path]::Combine($app.base, "system", "cmd", "host", "notify", $env:COMPUTERNAME)),
-      ([System.IO.Path]::Combine($app.base, "system", "cmd", "host", "poll", $env:COMPUTERNAME))
+      ([System.IO.Path]::Combine($app.baseLocal, "system", "cmd", "all")),
+      ([System.IO.Path]::Combine($app.baseLocal, "system", "cmd", "host", "notify", $env:COMPUTERNAME)),
+      ([System.IO.Path]::Combine($app.baseLocal, "system", "cmd", "host", "poll", $env:COMPUTERNAME))
     ) | ForEach-Object {
       Get-ChildItem -Force -Recurse -File $_ | Where-Object {
         $_.Extension -eq ".cmd"

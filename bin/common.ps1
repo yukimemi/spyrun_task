@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/21 18:04:50.
+  .Last Change: 2024/10/12 15:35:07.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -63,7 +63,7 @@ function New-Mutex {
     throw $_
   }
 
-  $mutexName = "Global¥$($app.cmdName)_$($app.isLocal)"
+  $mutexName = "Global¥$($app.cmdName)_$($app.mode)"
   log "Create mutex name: [${mutexName}]"
   $mutex = New-Object System.Threading.Mutex($false, $mutexName)
 
@@ -293,14 +293,18 @@ function Ensure-ScheduledTask {
     throw $_
   }
 
-  Copy-File $app.cmdRemoteFile $app.cmdLocalFile
-
   $registerXmlFile = [System.IO.Path]::Combine($app.spyrunBase, "task", "register", "$($app.cmdName).xml")
+  log "xmlStr: ${xmlStr}"
   $xmlStr | Set-Content -Encoding utf8 $registerXmlFile
 
+  $limitTime = (Get-Date).AddHours(1)
+
   while ($true) {
+    if ((Get-Date) -gt $limitTime) {
+      throw "Time over !!!"
+    }
     if (Test-Path $registerXmlFile) {
-      log "Task is not registered ! so wait ..."
+      log "Task is not registered ! so wait ... [${registerXmlFile}]"
       Start-Sleep -Seconds 1
     } else {
       break
@@ -330,11 +334,59 @@ function Remove-ScheduledTask {
   }
 
   $unRegisterXmlFile = [System.IO.Path]::Combine($app.spyrunBase, "task", "unregister", "$($app.cmdName).xml")
+  log "xmlStr: ${xmlStr}"
   $xmlStr | Set-Content -Encoding utf8 $unRegisterXmlFile
 
+  $limitTime = (Get-Date).AddHours(1)
+
   while ($true) {
+    if ((Get-Date) -gt $limitTime) {
+      throw "Time over !!!"
+    }
     if (Test-Path $unRegisterXmlFile) {
-      log "Task is not unregistered ! so wait ..."
+      log "Task is not unregistered ! so wait ... [${unRegisterXmlFile}]"
+      Start-Sleep -Seconds 1
+    } else {
+      break
+    }
+  }
+}
+
+<#
+  .SYNOPSIS
+    Sync-FS
+  .DESCRIPTION
+    spyrun の sync タスクを利用してファイルを転送する
+  .INPUTS
+    - arg: 転送情報 (PSCustomObject)
+      src: 転送元
+      dst: 転送先
+      option: コマンドオプション
+      type: "file" or "directory"
+  .OUTPUTS
+    - None
+#>
+function Sync-FS {
+  [CmdletBinding()]
+  [OutputType([void])]
+  param([PSCustomObject]$arg)
+
+  trap {
+    log "[Sync-FS] Error $_" "Red"
+    throw $_
+  }
+
+  $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "sync", "$(Get-Date -Format "yyyyMMddTHHmmssfffffff")_$($app.cmdName).json")
+  $arg | ConvertTo-Json | Set-Content -Encoding utf8 $syncFile
+
+  $limitTime = (Get-Date).AddHours(1)
+
+  while ($true) {
+    if ((Get-Date) -gt $limitTime) {
+      throw "Time over !!!"
+    }
+    if (Test-Path $syncFile) {
+      log "Sync is not ended ! so wait ... [${syncFile}]"
       Start-Sleep -Seconds 1
     } else {
       break
@@ -474,7 +526,12 @@ function Wait-Spyrun {
     throw $_
   }
 
+  $limitTime = (Get-Date).AddHours(1)
+
   while ($true) {
+    if ((Get-Date) -gt $limitTime) {
+      throw "Time over !!!"
+    }
     Get-CimInstance -ClassName Win32_Process | Where-Object {
       $_.Name -eq "spyrun.exe" -and $_.CommandLine -match $userType
     } | Set-Variable spyrun
@@ -494,6 +551,7 @@ function Wait-Spyrun {
   .DESCRIPTION
     Init 処理
   .INPUTS
+    - mode: "register": タスク登録, "main": 処理実行
     - version
   .OUTPUTS
     - $app
@@ -502,7 +560,7 @@ function Start-Init {
 
   [CmdletBinding()]
   [OutputType([object])]
-  param([string]$version)
+  param([string]$mode, [string]$version)
   trap {
     log "[Start-Init] Error $_" "Red"
     throw $_
@@ -520,6 +578,7 @@ function Start-Init {
     }
   }
 
+  $app.Add("mode", $mode)
   $app.Add("version", $version)
   $app.Add("lock", $false)
 
@@ -540,32 +599,31 @@ function Start-Init {
   $app.Add("spyrunName", [System.IO.Path]::GetFileNameWithoutExtension($app.spyrunFile))
   $app.Add("spyrunFileName", [System.IO.Path]::GetFileName($app.spyrunFile))
   $app.Add("spyrunBase", [System.IO.Path]::GetDirectoryName($app.spyrunDir))
-  $app.Add("initFile", [System.IO.Path]::Combine($app.spyrunDir, "init.ps1"))
-  $app.Add("base", (. $app.initFile))
-  $app.Add("cmdLocalFile", [System.IO.Path]::Combine($app.spyrunBase, $app.userType, "cmd", $app.scope, $app.watchMode, $app.cmdFileName))
-  $app.Add("cmdLocalDir", [System.IO.Path]::GetDirectoryName($app.cmdLocalFile))
-  if ($app.scope -eq "all") {
-    $app.Add("cmdRemoteFile", [System.IO.Path]::Combine($app.base, $app.userType, "cmd", $app.scope, $app.watchMode, $app.cmdFileName))
-    $app.Add("cmdRemoteDir", [System.IO.Path]::GetDirectoryName($app.cmdRemoteFile))
-  } else {
-    $app.Add("cmdRemoteFile", [System.IO.Path]::Combine($app.base, $app.userType, "cmd", $app.scope, $app.watchMode, $env:COMPUTERNAME, $app.cmdFileName))
-    $app.Add("cmdRemoteDir", [System.IO.Path]::GetDirectoryName($app.cmdRemoteFile))
+
+  $app.Add("baseFilePath", ([System.IO.Path]::Combine($app.spyrunDir, "base.txt")))
+
+  if (!(Test-Path $app.baseFilePath)) {
+    throw "base file path: [$($app.baseFilePath)] is not found !"
   }
-  $app.Add("isLocal", ($app.cmdFile -eq $app.cmdLocalFile))
-  $app.Add("dat", [System.IO.Path]::Combine($app.base, "dat"))
-  $app.Add("clct", [System.IO.Path]::Combine($app.base, $app.userType, "clct"))
-  $app.Add("resultDir", [System.IO.Path]::Combine($app.base, $app.userType, "result", $app.cmdName))
-  $app.Add("resultPrefixFile", [System.IO.Path]::Combine($app.resultDir, "${env:COMPUTERNAME}_$($app.cmdName)"))
-  $app.Add("logDir", [System.IO.Path]::Combine($app.base, $app.userType, "log", $app.scope, $app.watchMode, $app.cmdName, $env:COMPUTERNAME))
+
+  $app.Add("baseRemote", (Get-Content -Encoding utf8 $app.baseFilePath).Trim())
+  $app.Add("datRemote", [System.IO.Path]::Combine($app.baseRemote, "dat"))
+  $app.Add("clctRemote", [System.IO.Path]::Combine($app.baseRemote, $app.userType, "clct"))
+  $app.Add("resultDirRemote", [System.IO.Path]::Combine($app.baseRemote, $app.userType, "result", $app.cmdName))
+  $app.Add("resultPrefixFileRemote", [System.IO.Path]::Combine($app.resultDirRemote, "${env:COMPUTERNAME}_$($app.cmdName)"))
+
+  $app.Add("baseLocal", [System.IO.Path]::Combine($app.spyrunBase))
+  $app.Add("datLocal", $app.datRemote.Replace($app.baseRemote, $app.baseLocal))
+  $app.Add("clctLocal", $app.clctRemote.Replace($app.baseRemote, $app.baseLocal))
+  $app.Add("resultDirLocal", $app.resultDirRemote.Replace($app.baseRemote, $app.baseLocal))
+  $app.Add("resultPrefixFileLocal", $app.resultPrefixFileRemote.Replace($app.baseRemote, $app.baseLocal))
+
+  $app.Add("logDir", [System.IO.Path]::Combine($app.baseLocal, $app.userType, "log", $app.scope, $app.watchMode, $app.cmdName))
   $app.Add("logFile", [System.IO.Path]::Combine($app.logDir, "$($app.cmdName)_$($app.now).log"))
   $app.Add("logName", [System.IO.Path]::GetFileNameWithoutExtension($app.logFile))
   $app.Add("logFileName", [System.IO.Path]::GetFileName($app.logFile))
   New-Item -Force -ItemType Directory $app.logDir | Out-Null
   Start-Transcript $app.logFile
-
-  log "[Start-Init] base = $($app.base)"
-  log "[Start-Init] clct = $($app.clct)"
-  log "[Start-Init] resultDir = $($app.resultDir)"
 
   # const value.
   $app.Add("cnst", @{
@@ -585,40 +643,4 @@ function Start-Init {
 
   return $app
 }
-
-function Start-MainBefore {
-
-  [CmdletBinding()]
-  [OutputType([int])]
-  param([PSCustomObject]$app, [string]$xmlStr)
-  trap {
-    log "[Start-MainBefore] Error $_" "Red"
-    throw $_
-  }
-
-  log "[Start-MainBefore] Start"
-
-  if (!$app.isLocal) {
-    Ensure-ScheduledTask $app $xmlStr | Out-Null
-    exit $app.cnst.SUCCESS
-  }
-
-  if (!(Test-Path $app.cmdRemoteFile)) {
-    log "$($app.cmdRemoteFile) is not found !" "Red"
-    Remove-ScheduledTask $app $xmlStr
-    exit $app.cnst.SUCCESS
-  }
-
-  if (!(Check-FileHash $app.cmdLocalFile $app.cmdRemoteFile)) {
-    log "$($app.cmdLocalFile) is not same as $($app.cmdRemoteFile) !" "Red"
-    exit $app.cnst.SUCCESS
-  }
-
-  log "[Start-MainBefore] End"
-  return $app.cnst.SUCCESS
-}
-
-
-
-
 

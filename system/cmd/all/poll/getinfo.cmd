@@ -7,14 +7,15 @@
   .DESCRIPTION
     情報取得を行う
   .INPUTS
+    - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/16 17:23:06.
+  .Last Change: 2024/10/12 16:39:50.
 #>
-param()
+param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20231123_224008"
+$version = "20241012_163950"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -71,7 +72,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version)
+    $app = [PSCustomObject](Start-Init $mode $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"
@@ -83,7 +84,7 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT15M</Interval>
+        <Interval>PT3H</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
@@ -127,23 +128,34 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$($app.cmdLocalFile)</Command>
-      <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
+      <Command>$($app.cmdFile)</Command>
+      <Arguments>main</Arguments>
+      <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
 "@
 
-    Start-MainBefore $app $xmlStr
+    if ($app.mode -eq "register") {
+      Ensure-ScheduledTask $app $xmlStr | Out-Null
+      exit $app.cnst.SUCCESS
+    }
 
     # Execute main.
-    $collect = [System.IO.Path]::Combine($app.clct, $app.cmdName)
+    $collect = [System.IO.Path]::Combine($app.clctLocal, $app.cmdName)
     Get-InfoByPsCommand "Get-ComputerInfo" $collect
     Get-InfoByPsCommand "Get-NetIPAddress" $collect
     Get-InfoByPsCommand "Get-NetIPConfiguration" $collect
     Get-InfoByPsCommand "Get-NetRoute" $collect
     Get-InfoByPsCommand "Get-DnsClientServerAddress" $collect
     Get-InfoByPsCommand "Get-HotFix" $collect
+
+    Sync-FS [PSCustomObject]@{
+      src = $app.clctLocal
+      dst = $app.clctRemote
+      type = "directory"
+      option = "/e /r:1 /w:1"
+    }
 
     return $app.cnst.SUCCESS
 
@@ -165,3 +177,5 @@ function Start-Main {
 
 # Call main.
 exit Start-Main
+
+# vim: ft=ps1

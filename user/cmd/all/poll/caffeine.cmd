@@ -7,14 +7,16 @@
   .DESCRIPTION
     スリーブ抑止する
   .INPUTS
+    - mode: "register": タスク登録, "main": 処理実行
+    - async: "true": 非同期実行, "false": 同期実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/16 18:43:14.
+  .Last Change: 2024/10/12 14:53:23.
 #>
-param([bool]$async = $false)
+param([string]$mode = "register", [bool]$async = $false)
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20240414_164854"
+$version = "20241012_145323"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -36,7 +38,7 @@ function Start-Main {
 
     . "C:\ProgramData\spyrun\bin\common.ps1"
 
-    $app = [PSCustomObject](Start-Init $version)
+    $app = [PSCustomObject](Start-Init $mode $version)
     log "[Start-Main] Start"
 
     $xmlStr = @"
@@ -84,19 +86,22 @@ function Start-Main {
   <Actions Context="Author">
     <Exec>
       <Command>C:\Windows\system32\wscript.exe</Command>
-      <Arguments>"$($app.spyrunDir)\launch.js" "$($app.cmdLocalFile)"</Arguments>
-      <WorkingDirectory>$($app.cmdLocalDir)</WorkingDirectory>
+      <Arguments>"$($app.spyrunDir)\launch.js" "$($app.cmdFile)" main</Arguments>
+      <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
 "@
 
-    Start-MainBefore $app $xmlStr
+    if ($app.mode -eq "register") {
+      Ensure-ScheduledTask $app $xmlStr | Out-Null
+      exit $app.cnst.SUCCESS
+    }
 
     # Execute main.
     if (!$async) {
       $launch = [System.IO.Path]::Combine($app.spyrunDir, "launch.js")
-      Start-Process -File "wscript.exe" -ArgumentList $launch, $app.cmdFile, 1
+      Start-Process -File "wscript.exe" -ArgumentList $launch, $app.cmdFile, "main", 1
       return $app.cnst.SUCCESS
     }
     log "[info] Currently ordering a double shot of espresso..."
@@ -138,3 +143,5 @@ public static extern void SetThreadExecutionState(uint esFlags);
 
 # Call main.
 exit Start-Main
+
+# vim: ft=ps1
