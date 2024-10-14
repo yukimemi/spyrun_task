@@ -1,7 +1,7 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/10/12 17:59:50.
+# Last Change : 2024/10/12 18:53:22.
 # =============================================================================
 
 [vars]
@@ -45,7 +45,7 @@ hostname = '{{ env(arg="COMPUTERNAME") }}'
 sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$'
 base_file_path = '{{ cmd_dir }}\base.txt'
 
-version = '20241012_175950'
+version = '20241012_185322'
 
 funcs = '''
 function log {
@@ -178,7 +178,7 @@ stop_flg = '{{ cmd_dir }}\stop.flg'
 
 [log]
 path = '{{ base_local }}\log\{{ cmd_stem }}.log'
-level = 'debug'
+level = 'info'
 
 [init]
 cmd = 'powershell'
@@ -626,7 +626,7 @@ name = 'sync_log_system'
 input = '{{ log_local_dir_system }}'
 output = '{{ log_remote_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 60000
+throttle = 180000
 limitkey = '{{ spy_name }}'
 [[spys.patterns]]
 pattern = '\.log$'
@@ -651,7 +651,7 @@ name = 'sync_log_user'
 input = '{{ log_local_dir_user }}'
 output = '{{ log_remote_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 60000
+throttle = 180000
 limitkey = '{{ spy_name }}'
 [[spys.patterns]]
 pattern = '\.log$'
