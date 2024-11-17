@@ -1,13 +1,13 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/10/12 00:21:21.
+# Last Change : 2024/11/10 17:27:56.
 # =============================================================================
 
 [vars]
 base_local = '{{ cfg_dir }}\..'
 hostname = '{{ env(arg="COMPUTERNAME") }}'
-version = '20241012_002121'
+version = '20241110_172756'
 
 funcs = '''
 function log {
@@ -74,10 +74,10 @@ arg = ['-NoProfile', '-Command', '''& {
   throw "Update config {{ event_path }}"
 }''']
 
-# Execute under cmd/all/poll
+# Execute cmd/global
 [[spys]]
-name = 'user_all_poll'
-input = '{{ base_local }}\cmd\all\poll'
+name = 'cmd_global'
+input = '{{ base_local }}\cmd\global'
 output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 debounce = 5000
 [spys.poll]
@@ -85,35 +85,14 @@ interval = 10000
 [spys.walk]
 delay = [0, 60000]
 pattern = '\.cmd$|\.exe$|\.bat$'
-
-# Execute under cmd/all/notify
+# Execute cmd/local
 [[spys]]
-name = 'user_all_notify'
-input = '{{ base_local }}\cmd\all\notify'
-output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
-throttle = 5000
-[spys.walk]
-delay = [0, 60000]
-pattern = '\.cmd$|\.exe$|\.bat$'
-
-# Execute under cmd/host/poll
-[[spys]]
-name = 'user_host_poll'
-input = '{{ base_local }}\cmd\host\poll\{{ hostname }}'
+name = 'cmd_local'
+input = '{{ base_local }}\cmd\local\\{{ hostname }}'
 output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 debounce = 5000
 [spys.poll]
 interval = 10000
-[spys.walk]
-delay = [0, 60000]
-pattern = '\.cmd$|\.exe$|\.bat$'
-
-# Execute under cmd/host/notify
-[[spys]]
-name = 'user_host_notify'
-input = '{{ base_local }}\cmd\host\notify\{{ hostname }}'
-output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
-throttle = 5000
 [spys.walk]
 delay = [0, 60000]
 pattern = '\.cmd$|\.exe$|\.bat$'

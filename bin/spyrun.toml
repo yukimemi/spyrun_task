@@ -1,18 +1,23 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/10/12 18:53:22.
+# Last Change : 2024/11/12 22:08:12.
 # =============================================================================
 
 [vars]
+version = '20241112_220812'
+
 base_local = '{{ cmd_dir }}\..'
+base_local_core = '{{ base_local }}\core'
 base_local_system = '{{ base_local }}\system'
 base_local_user = '{{ base_local }}\user'
 
 base_remote = '{{ psf(arg="init.ps1") }}'
+base_remote_core = '{{ base_remote }}\core'
 base_remote_system = '{{ base_remote }}\system'
 base_remote_user = '{{ base_remote }}\user'
 
+cfg_local_dir_core = '{{ base_local_core }}\cfg'
 cfg_local_dir_system = '{{ base_local_system }}\cfg'
 cfg_local_dir_user = '{{ base_local_user }}\cfg'
 
@@ -20,6 +25,7 @@ cfg_local_path_system = '{{ cfg_local_dir_system }}\{{ cfg_name }}'
 cfg_local_path_user = '{{ cfg_local_dir_user }}\{{ cfg_name }}'
 
 cfg_remote_dir = '{{ base_remote }}\bin'
+cfg_remote_dir_core = '{{ base_remote_core }}\cfg'
 cfg_remote_dir_system = '{{ base_remote_system }}\cfg'
 cfg_remote_dir_user = '{{ base_remote_user }}\cfg'
 
@@ -30,12 +36,17 @@ cfg_remote_path_user = '{{ cfg_remote_dir_user }}\{{ cfg_name }}'
 cmd_remote_dir = '{{ base_remote }}\bin'
 cmd_remote_path = '{{ cmd_remote_dir }}\{{ cmd_name }}'
 
+log_local_dir_core = '{{ base_local_core }}\log'
 log_local_dir_system = '{{ base_local_system }}\log'
 log_local_dir_user = '{{ base_local_user }}\log'
 
 log_remote_dir = '{{ base_remote }}\log\{{ hostname }}'
+log_remote_dir_core = '{{ base_remote_core }}\log\{{ hostname }}'
 log_remote_dir_system = '{{ base_remote_system }}\log\{{ hostname }}'
 log_remote_dir_user = '{{ base_remote_user }}\log\{{ hostname }}'
+
+ng_local_dir = '{{ base_local }}\ng'
+ng_remote_dir = '{{ base_remote }}\ng\{{ hostname }}'
 
 stop_force_path_system = '{{ base_local_system }}\stop_force.flg'
 stop_force_path_user = '{{ base_local_user }}\stop_force.flg'
@@ -43,9 +54,6 @@ stop_force_path_user = '{{ base_local_user }}\stop_force.flg'
 hostname = '{{ env(arg="COMPUTERNAME") }}'
 
 sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$'
-base_file_path = '{{ cmd_dir }}\base.txt'
-
-version = '20241012_185322'
 
 funcs = '''
 function log {
@@ -54,26 +62,38 @@ function log {
   $now = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
   Write-Host "${now} ${msg}"
 }
-
 '''
 
 z_funcs = '''
 function sync_cfg {
+  & robocopy /mir "{{ cfg_remote_dir_core }}" "{{ cfg_local_dir_core }}"
   & robocopy /mir "{{ cfg_remote_dir_system }}" "{{ cfg_local_dir_system }}"
   & robocopy /mir "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }}"
 }
 function sync_cmd {
-  & robocopy /mir "{{ base_remote_system }}\cmd\all" "{{ base_local_system }}\cmd\all"
-  & robocopy /mir "{{ base_remote_system }}\cmd\host\poll\{{ hostname }}" "{{ base_local_system }}\cmd\host\poll\{{ hostname }}"
-  & robocopy /mir "{{ base_remote_system }}\cmd\host\notify\{{ hostname }}" "{{ base_local_system }}\cmd\host\notify\{{ hostname }}"
-  & robocopy /mir "{{ base_remote_user }}\cmd\all" "{{ base_local_user }}\cmd\all"
-  & robocopy /mir "{{ base_remote_user }}\cmd\host\poll\{{ hostname }}" "{{ base_local_user }}\cmd\host\poll\{{ hostname }}"
-  & robocopy /mir "{{ base_remote_user }}\cmd\host\notify\{{ hostname }}" "{{ base_local_user }}\cmd\host\notify\{{ hostname }}"
+  & robocopy /mir "{{ base_remote_core }}\cmd\global" "{{ base_local_core }}\cmd\global"
+  & robocopy /mir "{{ base_remote_core }}\cmd\local\{{ hostname }}" "{{ base_local_core }}\cmd\local\{{ hostname }}"
+  & robocopy /mir "{{ base_remote_system }}\cmd\global" "{{ base_local_system }}\cmd\global"
+  & robocopy /mir "{{ base_remote_system }}\cmd\local\{{ hostname }}" "{{ base_local_system }}\cmd\local\{{ hostname }}"
+  & robocopy /mir "{{ base_remote_user }}\cmd\global" "{{ base_local_user }}\cmd\global"
+  & robocopy /mir "{{ base_remote_user }}\cmd\local\{{ hostname }}" "{{ base_local_user }}\cmd\local\{{ hostname }}"
 }
 function sync_log {
-  & robocopy /e "{{ log_dir }}" "{{ log_remote_dir }}"
-  & robocopy /e "{{ log_local_dir_system }}" "{{ log_remote_dir_system }}"
-  & robocopy /e "{{ log_local_dir_user }}" "{{ log_remote_dir_user }}"
+  & robocopy /e /move /r:1 /w:1 "{{ log_dir }}" "{{ log_remote_dir }}"
+  & robocopy /e /move /r:1 /w:1 "{{ log_local_dir_core }}" "{{ log_remote_dir_core }}"
+  & robocopy /e /move /r:1 /w:1 "{{ log_local_dir_system }}" "{{ log_remote_dir_system }}"
+  & robocopy /e /move /r:1 /w:1 "{{ log_local_dir_user }}" "{{ log_remote_dir_user }}"
+}
+function sync_ng {
+  & robocopy /e /mov /r:1 /w:1 "{{ ng_local_dir }}" "{{ ng_remote_dir }}"
+}
+function move_to_ng {
+  param([string]$src)
+  $base = Resolve-Path '{{ base_local }}'
+  $dst = $src.Replace("/", "\").Replace($base, '{{ ng_local_dir }}')
+  log "${src} -> ${dst}"
+  New-Item -Force -ItemType Directory (Split-Path -Parent $dst) | Out-Null
+  Move-Item -Force $src $dst
 }
 '''
 
@@ -139,13 +159,13 @@ $copy = {
 }
 & $copy "{{ cfg_path }}" "{{ cfg_remote_path }}"
 & $copy "{{ cmd_path }}" "{{ cmd_remote_path }}" $true
-& $copy "{{ cmd_dir }}\common.ps1" "{{ cmd_remote_dir }}\common.ps1"
-& $copy "{{ cmd_dir }}\launch.js" "{{ cmd_remote_dir }}\launch.js"
 & $copy "{{ cmd_dir }}\init.ps1" "{{ cmd_remote_dir }}\init.ps1"
+& $copy "{{ cfg_local_dir_core }}\common.ps1" "{{ cfg_remote_dir_core }}\common.ps1"
+& $copy "{{ cfg_local_dir_core }}\launch.js" "{{ cfg_remote_dir_core }}\launch.js"
 
 sync_cfg
 sync_cmd
-sync_log
+sync_ng
 
 if ($script:stopFlg) {
   "spy_name: [{{ spy_name }}], cause: [${script:stopFile}] stop flg is true" | Set-Content -Encoding utf8 "{{ stop_force_path }}"
@@ -155,18 +175,22 @@ $initFlg = "{{ base_local }}\flg\init_{{ version }}.flg"
 if (Test-Path $initFlg) {
   return
 }
-New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\host\poll\{{ hostname }}" | Out-Null
-New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\host\notify\{{ hostname }}" | Out-Null
-New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\host\poll\{{ hostname }}" | Out-Null
-New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\host\notify\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_remote_core }}\cmd\local\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\local\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\local\{{ hostname }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\task\register" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\task\unregister" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\task\hash" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\sync" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\ng" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\remove" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\del" | Out-Null
+New-Item -Force -ItemType Directory "{{ log_local_dir_core }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ log_local_dir_system }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ log_local_dir_user }}" | Out-Null
 
-Get-ChildItem -Force -Recurse -File "{{ base_local }}" | ForEach-Object {
-  Unblock-File $_.FullName
+Get-ChildItem -Force -Recurse -File -ea Continue "{{ base_local }}" | ForEach-Object {
+  Unblock-File $_.FullName -ea Continue
 }
 icacls "{{ base_local }}" /grant EveryOne:F /t
 
@@ -178,7 +202,7 @@ stop_flg = '{{ cmd_dir }}\stop.flg'
 
 [log]
 path = '{{ base_local }}\log\{{ cmd_stem }}.log'
-level = 'info'
+level = 'warn'
 
 [init]
 cmd = 'powershell'
@@ -217,9 +241,8 @@ arg = [
 
   Ensure-ScheduledTask "\spyrun\spyrun" "\spyrun" "spyrun" "PT5M" "00:05:00" "{{ cmd_path }}" '' $true
   Ensure-ScheduledTask "\spyrun\system\spyrun" "\spyrun\system" "spyrun" "PT5M" "00:05:00" "{{ cmd_path }}" '-c "{{ cfg_local_path_system }}"' $true
-  Ensure-ScheduledTask "\spyrun\user\spyrun" "\spyrun\user" "spyrun" "PT5M" "00:05:00" "C:\Windows\system32\wscript.exe" "`"{{ cmd_dir }}\launch.js`" `"{{ cmd_path }}`" -c `"{{ cfg_local_path_user }}`"" $false
+  Ensure-ScheduledTask "\spyrun\user\spyrun" "\spyrun\user" "spyrun" "PT5M" "00:05:00" "C:\Windows\system32\wscript.exe" "`"{{ cfg_local_dir_core }}\launch.js`" `"{{ cmd_path }}`" -c `"{{ cfg_local_path_user }}`"" $false
 
-  '{{ base_remote }}' | Set-Content -Encoding utf8 '{{ base_file_path }}'
   {{ z_init_fn }}
 }''',
 ]
@@ -229,7 +252,8 @@ arg = [
 name = 'register_task'
 input = '{{ base_local }}\task\register'
 output = '{{ log_remote_dir }}\{{ spy_name }}\{{ event_stem }}'
-throttle = 5000
+recursive = true
+throttle = 10000
 [spys.walk]
 pattern = '\.xml$'
 [[spys.patterns]]
@@ -240,43 +264,50 @@ arg = [
   '-Command',
   '''& {
   {{ funcs }}
-  {{ trap_no_stop }}
+  {{ z_funcs }}
+  $ErrorActionPreference = "Stop"
+  log "spy_name: [{{ spy_name }}]"
+  try {
+    log "event_path: {{ event_path }}"
+    $xmlStr = [string](Get-Content -Encoding utf8 '{{ event_path }}')
+    log "xmlStr: ${xmlStr}"
+    $xml = [xml]$xmlStr
 
-  log "event_path: {{ event_path }}"
-  $xmlStr = [string](Get-Content -Encoding utf8 '{{ event_path }}')
-  log "xmlStr: ${xmlStr}"
-  $xml = [xml]$xmlStr
+    $hash = (Get-FileHash '{{ event_path }}').Hash
+    $saveHashPath = ('{{ event_path }}'.Replace("/", "\").Replace('\task\register\', '\task\hash\')) -replace "\.xml$", ".hash"
+    log "saveHashPath: [${saveHashPath}], hash: [${hash}]"
 
-  $hash = (Get-FileHash '{{ event_path }}').Hash
-  $saveHashPath = '{{ base_local }}\task\hash\{{ event_stem }}.hash'
+    Get-ScheduledTask | Where-Object {
+      $_.URI -eq $xml.Task.RegistrationInfo.URI
+    } | Set-Variable exists
 
-  Get-ScheduledTask | Where-Object {
-    $_.URI -eq $xml.Task.RegistrationInfo.URI
-  } | Set-Variable exists
+    if ($exists -and (Test-Path $saveHashPath) -and ((Get-Content $saveHashPath).Trim() -eq $hash)) {
+      log "Skip Register-ScheduledTask ! hash: ${hash}"
+      Remove-Item -Force '{{ event_path }}'
+      return
+    }
 
-  if ($exists -and (Test-Path $saveHashPath) -and ((Get-Content $saveHashPath).Trim() -eq $hash)) {
-    log "Skip Register-ScheduledTask ! hash: ${hash}"
+    $part = $xml.Task.RegistrationInfo.URI -split "\\"
+    $taskpath = $part[0..($part.Length - 2)] -join "\"
+    $taskname = $part[-1]
+    log "Register-ScheduledTask ${taskpath}\${taskname} !"
+    Register-ScheduledTask -Force -TaskPath $taskpath -TaskName $taskname -Xml $xmlStr | Out-Null
+
+    Get-ScheduledTask | Where-Object {
+      $_.URI -eq $xml.Task.RegistrationInfo.URI
+    } | Set-Variable check
+
+    if ($null -eq $check) {
+      throw "Register-ScheduledTask error ! URI: $($xml.Task.RegistrationInfo.URI)"
+    }
+
+    New-Item -Force -ItemType Directory (Split-Path -Parent $saveHashPath) | Out-Null
+    $hash | Set-Content -Encoding utf8 $saveHashPath
     Remove-Item -Force '{{ event_path }}'
-    return
+  } catch {
+    log "{{ spy_name }} Error ! $_"
+    move_to_ng '{{ event_path }}'
   }
-
-  $part = $xml.Task.RegistrationInfo.URI -split "\\"
-  $taskpath = $part[0..($part.Length - 2)] -join "\"
-  $taskname = $part[-1]
-  log "Register-ScheduledTask ${taskpath}\${taskname} !"
-  Register-ScheduledTask -Force -TaskPath $taskpath -TaskName $taskname -Xml $xmlStr | Out-Null
-
-  Get-ScheduledTask | Where-Object {
-    $_.URI -eq $xml.Task.RegistrationInfo.URI
-  } | Set-Variable check
-
-  if ($null -eq $check) {
-    throw "Register-ScheduledTask error ! URI: $($xml.Task.RegistrationInfo.URI)"
-  }
-
-  New-Item -Force -ItemType Directory (Split-Path -Parent $saveHashPath) | Out-Null
-  $hash | Set-Content -Encoding utf8 $saveHashPath
-  Remove-Item -Force '{{ event_path }}'
 }''',
 ]
 
@@ -285,7 +316,8 @@ arg = [
 name = 'unregister_task'
 input = '{{ base_local }}\task\unregister'
 output = '{{ log_remote_dir }}\{{ spy_name }}\{{ event_stem }}'
-throttle = 5000
+recursive = true
+throttle = 10000
 [spys.walk]
 pattern = '\.xml$'
 [[spys.patterns]]
@@ -293,62 +325,68 @@ pattern = '\.xml$'
 cmd = 'powershell'
 arg = ['-NoProfile', '-Command', '''& {
   {{ funcs }}
-  {{ trap_no_stop }}
+  {{ z_funcs }}
+  $ErrorActionPreference = "Stop"
+  log "spy_name: [{{ spy_name }}]"
+  try {
+    log "event_path: {{ event_path }}"
+    $xmlStr = [string](Get-Content -Encoding utf8 '{{ event_path }}')
+    log "xmlStr: ${xmlStr}"
+    $xml = [xml]$xmlStr
 
-  log "event_path: {{ event_path }}"
-  $xmlStr = [string](Get-Content -Encoding utf8 '{{ event_path }}')
-  log "xmlStr: ${xmlStr}"
-  $xml = [xml]$xmlStr
+    Get-ScheduledTask | Where-Object {
+      $_.URI -eq $xml.Task.RegistrationInfo.URI
+    } | Set-Variable exists
 
-  Get-ScheduledTask | Where-Object {
-    $_.URI -eq $xml.Task.RegistrationInfo.URI
-  } | Set-Variable exists
+    if ($null -eq $exists) {
+      log "$($xml.Task.RegistrationInfo.URI) is already removed !"
+      Remove-Item -Force '{{ event_path }}'
+      return
+    }
 
-  if ($null -eq $exists) {
-    log "$($xml.Task.RegistrationInfo.URI) is already removed !"
+    $part = $xml.Task.RegistrationInfo.URI -split "\\"
+    $taskpath = ($part[0..($part.Length - 2)] -join "\")
+    $taskname = $part[-1]
+    log "Unregister-ScheduledTask ${taskpath}\${taskname}"
+
+    $removeTasks = {
+      param([object]$folder)
+
+      if (![string]::IsNullOrEmpty($taskname)) {
+        $folder.GetTasks(1) | Where-Object {
+          $folder.Path -eq $taskpath -and $_.Name -eq $taskname
+        } | ForEach-Object {
+          log "Remove taskpath: [${taskpath}], taskname: [${taskname}]"
+          [void]$folder.DeleteTask($_.Name, $null)
+        }
+      }
+      if ([string]::IsNullOrEmpty($taskname)) {
+        $folder.GetFolders(1) | ForEach-Object {
+          & $removeTasks $_
+        }
+        $folder.GetTasks(1) | ForEach-Object {
+          [void]$folder.DeleteTask($_.Name, $null)
+        }
+        if ($folder.Path -eq $taskpath -and $taskpath -ne "\") {
+          log "Remove taskpath folder: [$taskpath]"
+          $sch = New-Object -ComObject Schedule.Service
+          [void]$sch.connect()
+          $rootFolder = $sch.GetFolder("\")
+          [void]$rootFolder.DeleteFolder($taskpath, $null)
+        }
+      }
+    }
+
+    $sch = New-Object -ComObject Schedule.Service
+    [void]$sch.connect()
+    $folder = $sch.GetFolder($taskpath)
+    & $removeTasks $folder
+
     Remove-Item -Force '{{ event_path }}'
-    return
+  } catch {
+    log "{{ spy_name }} Error ! $_"
+    move_to_ng '{{ event_path }}'
   }
-
-  $part = $xml.Task.RegistrationInfo.URI -split "\\"
-  $taskpath = ($part[0..($part.Length - 2)] -join "\")
-  $taskname = $part[-1]
-  log "Unregister-ScheduledTask ${taskpath}\${taskname}"
-
-  $removeTasks = {
-    param([object]$folder)
-
-    if (![string]::IsNullOrEmpty($taskname)) {
-      $folder.GetTasks(1) | Where-Object {
-        $folder.Path -eq $taskpath -and $_.Name -eq $taskname
-      } | ForEach-Object {
-        log "Remove taskpath: [${taskpath}], taskname: [${taskname}]"
-        [void]$folder.DeleteTask($_.Name, $null)
-      }
-    }
-    if ([string]::IsNullOrEmpty($taskname)) {
-      $folder.GetFolders(1) | ForEach-Object {
-        & $removeTasks $_
-      }
-      $folder.GetTasks(1) | ForEach-Object {
-        [void]$folder.DeleteTask($_.Name, $null)
-      }
-      if ($folder.Path -eq $taskpath -and $taskpath -ne "\") {
-        log "Remove taskpath folder: [$taskpath]"
-        $sch = New-Object -ComObject Schedule.Service
-        [void]$sch.connect()
-        $rootFolder = $sch.GetFolder("\")
-        [void]$rootFolder.DeleteFolder($taskpath, $null)
-      }
-    }
-  }
-
-  $sch = New-Object -ComObject Schedule.Service
-  [void]$sch.connect()
-  $folder = $sch.GetFolder($taskpath)
-  & $removeTasks $folder
-
-  Remove-Item -Force '{{ event_path }}'
 }''']
 
 # Update bin / cfg
@@ -367,11 +405,90 @@ arg = ['-NoProfile', '-Command', '''& {
   {{ z_init_fn }}
 }''']
 
+# Remove
+[[spys]]
+name = 'remove'
+input = '{{ base_local }}\remove'
+output = '{{ log_remote_dir }}\{{ spy_name }}'
+debounce = 5000
+[spys.walk]
+pattern = '\.json$'
+[[spys.patterns]]
+pattern = '\.json$'
+cmd = 'powershell'
+arg = ['-NoProfile', '-Command', '''& {
+  {{ funcs }}
+  {{ z_funcs }}
+  {{ trap_no_stop }}
+  log "event_path: {{ event_path }}"
+  $json = Get-Content -Encoding utf8 '{{ event_path }}'
+  log "json: ${json}"
+  $cfg = $json | ConvertFrom-Json
+  log "path: [$($cfg.path)]"
+  if (Test-Path $cfg.path) {
+    log "Remove: [$($cfg.path)]"
+    Remove-Item -Force -Recurse $cfg.path
+  } else {
+    log "$($cfg.path) is not found !"
+  }
+  Remove-Item -Force '{{ event_path }}'
+}''']
+
+# Remove cmd
+[[spys]]
+name = 'remove_system_cmd'
+input = '{{ base_local_system }}\cmd'
+output = '{{ log_remote_dir }}\{{ spy_name }}'
+recursive = true
+debounce = 5000
+events = ['Remove']
+[[spys.patterns]]
+pattern = '.*'
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ trap_no_stop }}
+  log "event_path: {{ event_path }}"
+  $base_local_system = Resolve-Path '{{ base_local_system }}'
+  $base_remote_system = Resolve-Path '{{ base_remote_system }}'
+  [PSCustomObject]@{
+    path = '{{ event_path }}'.Replace("/", "\").Replace($base_local_system, $base_remote_system)
+  } | ConvertTo-Json | Set-Content -Encoding utf8 "{{ base_local }}\remove\{{ spy_name }}_{{ event_stem }}_$((New-Guid).Guid).json"
+}''',
+]
+[[spys]]
+name = 'remove_user_cmd'
+input = '{{ base_local_user }}\cmd'
+output = '{{ log_remote_dir }}\{{ spy_name }}'
+recursive = true
+debounce = 5000
+events = ['Remove']
+[[spys.patterns]]
+pattern = '.*'
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ trap_no_stop }}
+  log "event_path: {{ event_path }}"
+  $base_local_user = Resolve-Path '{{ base_local_user }}'
+  $base_remote_user = Resolve-Path '{{ base_remote_user }}'
+  [PSCustomObject]@{
+    path = '{{ event_path }}'.Replace("/", "\").Replace($base_local_user, $base_remote_user)
+  } | ConvertTo-Json | Set-Content -Encoding utf8 "{{ base_local }}\remove\{{ spy_name }}_{{ event_stem }}_$((New-Guid).Guid).json"
+}''',
+]
+
 # Sync
 [[spys]]
 name = 'sync'
 input = '{{ base_local }}\sync'
-output = '{{ log_remote_dir }}\{{ spy_name }}\{{ event_stem }}'
+output = '{{ log_remote_dir }}\{{ spy_name }}'
 debounce = 5000
 [spys.walk]
 pattern = '\.json$'
@@ -384,34 +501,72 @@ arg = [
   '''& {
   {{ funcs }}
   {{ z_funcs }}
-  {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
-  $json = Get-Content -Encoding utf8 '{{ event_path }}'
-  log "json: ${json}"
-  $cfg = $json | ConvertFrom-Json
-  log "src: [$($cfg.src)]"
-  log "dst: [$($cfg.dst)]"
-  log "type: [$($cfg.type)]"
-  log "option: [$($cfg.option)]"
-  if (!(Test-Path $cfg.src)) {
-    throw "$($cfg.src) is not found !"
+  $ErrorActionPreference = "Stop"
+  log "spy_name: [{{ spy_name }}]"
+  try {
+    log "event_path: {{ event_path }}"
+    $json = Get-Content -Encoding utf8 '{{ event_path }}'
+    log "json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "src: [$($cfg.src)]"
+    log "dst: [$($cfg.dst)]"
+    log "type: [$($cfg.type)]"
+    log "option: [$($cfg.option)]"
+    log "remove: [$($cfg.remove)]"
+    if (!(Test-Path $cfg.src)) {
+      throw "$($cfg.src) is not found !"
+    }
+    if ($cfg.type -eq "directory") {
+      Invoke-Expression "& robocopy $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+      if ($LASTEXITCODE -ge 8) {
+        throw "robocopy error !"
+      }
+    } elseif ($cfg.type -eq "file") {
+      New-Item -Force -ItemType Directory (Split-Path -Parent $cfg.dst) | Out-Null
+      Invoke-Expression "Copy-Item $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+    } else {
+      throw "Error `type` must be `file` or `directory` (type: $($cfg.type))"
+    }
+    Get-ChildItem -Force -Recurse -File $cfg.dst | ForEach-Object {
+      Unblock-File $_.FullName
+    }
+    if ($cfg.remove) {
+      log "Remove flg on, so remove [$($cfg.src)] !"
+      Remove-Item -Force -Recurse $cfg.src
+    }
+    Remove-Item -Force '{{ event_path }}'
+  } catch {
+    log "{{ spy_name }} Error ! $_"
+    move_to_ng '{{ event_path }}'
   }
-  if ($cfg.type -eq "directory") {
-    Invoke-Expression "& robocopy $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
-  } elseif ($cfg.type -eq "file") {
-    New-Item -Force -ItemType Directory (Split-Path -Parent $cfg.dst) | Out-Null
-    Invoke-Expression "Copy-Item $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
-  } else {
-    throw "Error `type` must be `file` or `directory` (type: $($cfg.type))"
-  }
-  Get-ChildItem -Force -Recurse -File $cfg.dst | ForEach-Object {
-    Unblock-File $_.FullName
-  }
-  Remove-Item -Force '{{ event_path }}'
 }''',
 ]
 
 # Sync cfg
+[[spys]]
+name = 'sync_core_cfg'
+input = '{{ cfg_remote_dir_core }}'
+output = '{{ log_remote_dir }}\{{ spy_name }}'
+debounce = 5000
+limitkey = '{{ spy_name }}'
+[[spys.patterns]]
+pattern = '\.ps1$|\.js$'
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ trap_no_stop }}
+  log "event_path: {{ event_path }}"
+  [PSCustomObject]@{
+    src = "{{ cfg_remote_dir_core }}"
+    dst = "{{ cfg_local_dir_core }}"
+    type = "directory"
+    option = "/mir"
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+}''',
+]
 [[spys]]
 name = 'sync_system_cfg'
 input = '{{ cfg_remote_dir_system }}'
@@ -463,8 +618,8 @@ arg = [
 
 # Sync cmd
 [[spys]]
-name = 'sync_system_cmd_all'
-input = '{{ base_remote_system }}\cmd\all'
+name = 'sync_system_cmd_global'
+input = '{{ base_remote_system }}\cmd\global'
 output = '{{ log_remote_dir }}\{{ spy_name }}'
 recursive = true
 debounce = 5000
@@ -481,16 +636,16 @@ arg = [
   {{ trap_no_stop }}
   log "event_path: {{ event_path }}"
   [PSCustomObject]@{
-    src = "{{ base_remote_system }}\cmd\all"
-    dst = "{{ base_local_system }}\cmd\all"
+    src = "{{ base_remote_system }}\cmd\global"
+    dst = "{{ base_local_system }}\cmd\global"
     type = "directory"
     option = "/mir"
   } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
 }''',
 ]
 [[spys]]
-name = 'sync_system_cmd_host_poll'
-input = '{{ base_remote_system }}\cmd\host\poll\{{ hostname }}'
+name = 'sync_system_cmd_local'
+input = '{{ base_remote_system }}\cmd\local\{{ hostname }}'
 output = '{{ log_remote_dir }}\{{ spy_name }}'
 recursive = true
 debounce = 5000
@@ -507,16 +662,16 @@ arg = [
   {{ trap_no_stop }}
   log "event_path: {{ event_path }}"
   [PSCustomObject]@{
-    src = "{{ base_remote_system }}\cmd\host\poll\{{ hostname }}"
-    dst = "{{ base_local_system }}\cmd\host\poll\{{ hostname }}"
+    src = "{{ base_remote_system }}\cmd\local\{{ hostname }}"
+    dst = "{{ base_local_system }}\cmd\local\{{ hostname }}"
     type = "directory"
     option = "/mir"
   } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
 }''',
 ]
 [[spys]]
-name = 'sync_system_cmd_host_notify'
-input = '{{ base_remote_system }}\cmd\host\notify\{{ hostname }}'
+name = 'sync_user_cmd_global'
+input = '{{ base_remote_user }}\cmd\global'
 output = '{{ log_remote_dir }}\{{ spy_name }}'
 recursive = true
 debounce = 5000
@@ -533,16 +688,16 @@ arg = [
   {{ trap_no_stop }}
   log "event_path: {{ event_path }}"
   [PSCustomObject]@{
-    src = "{{ base_remote_system }}\cmd\host\notify\{{ hostname }}"
-    dst = "{{ base_local_system }}\cmd\host\notify\{{ hostname }}"
+    src = "{{ base_remote_user }}\cmd\global"
+    dst = "{{ base_local_user }}\cmd\global"
     type = "directory"
     option = "/mir"
   } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
 }''',
 ]
 [[spys]]
-name = 'sync_user_cmd_all'
-input = '{{ base_remote_user }}\cmd\all'
+name = 'sync_user_cmd_local'
+input = '{{ base_remote_user }}\cmd\local\{{ hostname }}'
 output = '{{ log_remote_dir }}\{{ spy_name }}'
 recursive = true
 debounce = 5000
@@ -559,50 +714,24 @@ arg = [
   {{ trap_no_stop }}
   log "event_path: {{ event_path }}"
   [PSCustomObject]@{
-    src = "{{ base_remote_user }}\cmd\all"
-    dst = "{{ base_local_user }}\cmd\all"
-    type = "directory"
-    option = "/mir"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
-}''',
-]
-[[spys]]
-name = 'sync_user_cmd_host_poll'
-input = '{{ base_remote_user }}\cmd\host\poll\{{ hostname }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-recursive = true
-debounce = 5000
-limitkey = '{{ spy_name }}'
-events = ['Create', 'Modify', 'Remove']
-[[spys.patterns]]
-pattern = '\.cmd$|\.exe$|\.bat$'
-cmd = 'powershell'
-arg = [
-  '-NoProfile',
-  '-Command',
-  '''& {
-  {{ funcs }}
-  {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
-  [PSCustomObject]@{
-    src = "{{ base_remote_user }}\cmd\host\poll\{{ hostname }}"
-    dst = "{{ base_local_user }}\cmd\host\poll\{{ hostname }}"
+    src = "{{ base_remote_user }}\cmd\local\{{ hostname }}"
+    dst = "{{ base_local_user }}\cmd\local\{{ hostname }}"
     type = "directory"
     option = "/mir"
   } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
 }''',
 ]
 
+# sync ng
 [[spys]]
-name = 'sync_user_cmd_host_notify'
-input = '{{ base_remote_user }}\cmd\host\notify\{{ hostname }}'
+name = 'sync_ng'
+input = '{{ ng_local_dir }}'
 output = '{{ log_remote_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 5000
+throttle = 600000
 limitkey = '{{ spy_name }}'
-events = ['Create', 'Modify', 'Remove']
 [[spys.patterns]]
-pattern = '\.cmd$|\.exe$|\.bat$'
+pattern = '.*'
 cmd = 'powershell'
 arg = [
   '-NoProfile',
@@ -611,63 +740,35 @@ arg = [
   {{ funcs }}
   {{ trap_no_stop }}
   log "event_path: {{ event_path }}"
+  Start-Sleep -Seconds 30
   [PSCustomObject]@{
-    src = "{{ base_remote_user }}\cmd\host\notify\{{ hostname }}"
-    dst = "{{ base_local_user }}\cmd\host\notify\{{ hostname }}"
+    src = "{{ ng_local_dir }}"
+    dst = "{{ ng_remote_dir }}"
     type = "directory"
-    option = "/mir"
+    option = "/e /mov /r:1 /w:1"
   } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
 }''',
 ]
 
-# Sync log
+# Execute cmd/global
 [[spys]]
-name = 'sync_log_system'
-input = '{{ log_local_dir_system }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-recursive = true
-throttle = 180000
-limitkey = '{{ spy_name }}'
-[[spys.patterns]]
-pattern = '\.log$'
-cmd = 'powershell'
-arg = [
-  '-NoProfile',
-  '-Command',
-  '''& {
-  {{ funcs }}
-  {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
-  [PSCustomObject]@{
-    src = "{{ log_local_dir_system }}"
-    dst = "{{ log_remote_dir_system }}"
-    type = "directory"
-    option = "/e /r:1 /w:1"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
-}''',
-]
+name = 'cmd_global'
+input = '{{ base_remote_core }}\cmd\global'
+output = '{{ log_remote_dir_core }}\{{ spy_name }}\{{ event_stem }}'
+debounce = 5000
+[spys.poll]
+interval = 10000
+[spys.walk]
+delay = [0, 60000]
+pattern = '\.cmd$|\.exe$|\.bat$'
+# Execute cmd/local
 [[spys]]
-name = 'sync_log_user'
-input = '{{ log_local_dir_user }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-recursive = true
-throttle = 180000
-limitkey = '{{ spy_name }}'
-[[spys.patterns]]
-pattern = '\.log$'
-cmd = 'powershell'
-arg = [
-  '-NoProfile',
-  '-Command',
-  '''& {
-  {{ funcs }}
-  {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
-  [PSCustomObject]@{
-    src = "{{ log_local_dir_user }}"
-    dst = "{{ log_remote_dir_user }}"
-    type = "directory"
-    option = "/e /r:1 /w:1"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
-}''',
-]
+name = 'cmd_local'
+input = '{{ base_remote_core }}\cmd\local\{{ hostname }}'
+output = '{{ log_remote_dir_core }}\{{ spy_name }}\{{ event_stem }}'
+debounce = 5000
+[spys.poll]
+interval = 10000
+[spys.walk]
+delay = [0, 60000]
+pattern = '\.cmd$|\.exe$|\.bat$'
