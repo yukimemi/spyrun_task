@@ -1,11 +1,11 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/11/12 22:08:12.
+# Last Change : 2024/12/20 16:45:11.
 # =============================================================================
 
 [vars]
-version = '20241112_220812'
+version = '20241220_164511'
 
 base_local = '{{ cmd_dir }}\..'
 base_local_core = '{{ base_local }}\core'
@@ -71,18 +71,16 @@ function sync_cfg {
   & robocopy /mir "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }}"
 }
 function sync_cmd {
-  & robocopy /mir "{{ base_remote_core }}\cmd\global" "{{ base_local_core }}\cmd\global"
-  & robocopy /mir "{{ base_remote_core }}\cmd\local\{{ hostname }}" "{{ base_local_core }}\cmd\local\{{ hostname }}"
   & robocopy /mir "{{ base_remote_system }}\cmd\global" "{{ base_local_system }}\cmd\global"
   & robocopy /mir "{{ base_remote_system }}\cmd\local\{{ hostname }}" "{{ base_local_system }}\cmd\local\{{ hostname }}"
   & robocopy /mir "{{ base_remote_user }}\cmd\global" "{{ base_local_user }}\cmd\global"
   & robocopy /mir "{{ base_remote_user }}\cmd\local\{{ hostname }}" "{{ base_local_user }}\cmd\local\{{ hostname }}"
 }
 function sync_log {
-  & robocopy /e /move /r:1 /w:1 "{{ log_dir }}" "{{ log_remote_dir }}"
-  & robocopy /e /move /r:1 /w:1 "{{ log_local_dir_core }}" "{{ log_remote_dir_core }}"
-  & robocopy /e /move /r:1 /w:1 "{{ log_local_dir_system }}" "{{ log_remote_dir_system }}"
-  & robocopy /e /move /r:1 /w:1 "{{ log_local_dir_user }}" "{{ log_remote_dir_user }}"
+  & robocopy /e /move /minage:1 /r:1 /w:1 "{{ log_dir }}" "{{ log_remote_dir }}"
+  & robocopy /e /move /minage:1 /r:1 /w:1 "{{ log_local_dir_core }}" "{{ log_remote_dir_core }}"
+  & robocopy /e /move /minage:1 /r:1 /w:1 "{{ log_local_dir_system }}" "{{ log_remote_dir_system }}"
+  & robocopy /e /move /minage:1 /r:1 /w:1 "{{ log_local_dir_user }}" "{{ log_remote_dir_user }}"
 }
 function sync_ng {
   & robocopy /e /mov /r:1 /w:1 "{{ ng_local_dir }}" "{{ ng_remote_dir }}"
@@ -99,6 +97,8 @@ function move_to_ng {
 
 trap_no_stop = '''
 log "spy_name: [{{ spy_name }}]"
+log "event_path: {{ event_path }}"
+log "event_kind: {{ event_kind }}"
 $ErrorActionPreference = "Stop"
 trap {
   log "{{ spy_name }} Error ! $_"
@@ -107,6 +107,8 @@ trap {
 
 trap_stop = '''
 log "spy_name: [{{ spy_name }}]"
+log "event_path: {{ event_path }}"
+log "event_kind: {{ event_kind }}"
 $ErrorActionPreference = "Stop"
 trap {
   log "{{ spy_name }} Error ! $_"
@@ -116,6 +118,8 @@ trap {
 
 trap_stop_force = '''
 log "spy_name: [{{ spy_name }}]"
+log "event_path: {{ event_path }}"
+log "event_kind: {{ event_kind }}"
 $ErrorActionPreference = "Stop"
 trap {
   log "{{ spy_name }} Error ! $_"
@@ -185,7 +189,6 @@ New-Item -Force -ItemType Directory "{{ base_local }}\sync" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\ng" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\remove" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\del" | Out-Null
-New-Item -Force -ItemType Directory "{{ log_local_dir_core }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ log_local_dir_system }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ log_local_dir_user }}" | Out-Null
 
@@ -251,9 +254,10 @@ arg = [
 [[spys]]
 name = 'register_task'
 input = '{{ base_local }}\task\register'
-output = '{{ log_remote_dir }}\{{ spy_name }}\{{ event_stem }}'
+output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 recursive = true
 throttle = 10000
+limitkey = '{{ event_path }}'
 [spys.walk]
 pattern = '\.xml$'
 [[spys.patterns]]
@@ -267,8 +271,9 @@ arg = [
   {{ z_funcs }}
   $ErrorActionPreference = "Stop"
   log "spy_name: [{{ spy_name }}]"
+  log "event_path: {{ event_path }}"
+  log "event_kind: {{ event_kind }}"
   try {
-    log "event_path: {{ event_path }}"
     $xmlStr = [string](Get-Content -Encoding utf8 '{{ event_path }}')
     log "xmlStr: ${xmlStr}"
     $xml = [xml]$xmlStr
@@ -315,9 +320,10 @@ arg = [
 [[spys]]
 name = 'unregister_task'
 input = '{{ base_local }}\task\unregister'
-output = '{{ log_remote_dir }}\{{ spy_name }}\{{ event_stem }}'
+output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 recursive = true
 throttle = 10000
+limitkey = '{{ event_path }}'
 [spys.walk]
 pattern = '\.xml$'
 [[spys.patterns]]
@@ -328,8 +334,9 @@ arg = ['-NoProfile', '-Command', '''& {
   {{ z_funcs }}
   $ErrorActionPreference = "Stop"
   log "spy_name: [{{ spy_name }}]"
+  log "event_path: {{ event_path }}"
+  log "event_kind: {{ event_kind }}"
   try {
-    log "event_path: {{ event_path }}"
     $xmlStr = [string](Get-Content -Encoding utf8 '{{ event_path }}')
     log "xmlStr: ${xmlStr}"
     $xml = [xml]$xmlStr
@@ -393,15 +400,15 @@ arg = ['-NoProfile', '-Command', '''& {
 [[spys]]
 name = 'update_bin'
 input = '{{ cmd_remote_dir }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-debounce = 5000
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 10000
+limitkey = '{{ spy_name }}'
 [[spys.patterns]]
 pattern = '{{ sync_pattern }}'
 cmd = 'powershell'
 arg = ['-NoProfile', '-Command', '''& {
   {{ funcs }}
   {{ trap_stop_force }}
-  log "event_path: {{ event_path }}"
   {{ z_init_fn }}
 }''']
 
@@ -409,8 +416,9 @@ arg = ['-NoProfile', '-Command', '''& {
 [[spys]]
 name = 'remove'
 input = '{{ base_local }}\remove'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-debounce = 5000
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 10000
+limitkey = '{{ event_path }}'
 [spys.walk]
 pattern = '\.json$'
 [[spys.patterns]]
@@ -420,7 +428,6 @@ arg = ['-NoProfile', '-Command', '''& {
   {{ funcs }}
   {{ z_funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   $json = Get-Content -Encoding utf8 '{{ event_path }}'
   log "json: ${json}"
   $cfg = $json | ConvertFrom-Json
@@ -438,9 +445,10 @@ arg = ['-NoProfile', '-Command', '''& {
 [[spys]]
 name = 'remove_system_cmd'
 input = '{{ base_local_system }}\cmd'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
+output = '{{ log_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 5000
+debounce = 10000
+limitkey = '{{ event_path }}'
 events = ['Remove']
 [[spys.patterns]]
 pattern = '.*'
@@ -451,7 +459,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   $base_local_system = Resolve-Path '{{ base_local_system }}'
   $base_remote_system = Resolve-Path '{{ base_remote_system }}'
   [PSCustomObject]@{
@@ -462,9 +469,10 @@ arg = [
 [[spys]]
 name = 'remove_user_cmd'
 input = '{{ base_local_user }}\cmd'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
+output = '{{ log_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 5000
+debounce = 10000
+limitkey = '{{ event_path }}'
 events = ['Remove']
 [[spys.patterns]]
 pattern = '.*'
@@ -475,7 +483,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   $base_local_user = Resolve-Path '{{ base_local_user }}'
   $base_remote_user = Resolve-Path '{{ base_remote_user }}'
   [PSCustomObject]@{
@@ -488,8 +495,9 @@ arg = [
 [[spys]]
 name = 'sync'
 input = '{{ base_local }}\sync'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-debounce = 5000
+output = '{{ log_dir }}\{{ spy_name }}'
+throttle = 30000
+limitkey = '{{ event_path }}'
 [spys.walk]
 pattern = '\.json$'
 [[spys.patterns]]
@@ -503,8 +511,9 @@ arg = [
   {{ z_funcs }}
   $ErrorActionPreference = "Stop"
   log "spy_name: [{{ spy_name }}]"
+  log "event_path: {{ event_path }}"
+  log "event_kind: {{ event_kind }}"
   try {
-    log "event_path: {{ event_path }}"
     $json = Get-Content -Encoding utf8 '{{ event_path }}'
     log "json: ${json}"
     $cfg = $json | ConvertFrom-Json
@@ -546,8 +555,8 @@ arg = [
 [[spys]]
 name = 'sync_core_cfg'
 input = '{{ cfg_remote_dir_core }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-debounce = 5000
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 10000
 limitkey = '{{ spy_name }}'
 [[spys.patterns]]
 pattern = '\.ps1$|\.js$'
@@ -558,7 +567,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   [PSCustomObject]@{
     src = "{{ cfg_remote_dir_core }}"
     dst = "{{ cfg_local_dir_core }}"
@@ -570,8 +578,8 @@ arg = [
 [[spys]]
 name = 'sync_system_cfg'
 input = '{{ cfg_remote_dir_system }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-debounce = 5000
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 10000
 limitkey = '{{ spy_name }}'
 [[spys.patterns]]
 pattern = '\.toml$'
@@ -582,7 +590,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   [PSCustomObject]@{
     src = "{{ cfg_remote_dir_system }}"
     dst = "{{ cfg_local_dir_system }}"
@@ -594,8 +601,8 @@ arg = [
 [[spys]]
 name = 'sync_user_cfg'
 input = '{{ cfg_remote_dir_user }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
-debounce = 5000
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 10000
 limitkey = '{{ spy_name }}'
 [[spys.patterns]]
 pattern = '\.toml$'
@@ -606,7 +613,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   [PSCustomObject]@{
     src = "{{ cfg_remote_dir_user }}"
     dst = "{{ cfg_local_dir_user }}"
@@ -620,9 +626,9 @@ arg = [
 [[spys]]
 name = 'sync_system_cmd_global'
 input = '{{ base_remote_system }}\cmd\global'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
+output = '{{ log_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 5000
+debounce = 10000
 limitkey = '{{ spy_name }}'
 events = ['Create', 'Modify', 'Remove']
 [[spys.patterns]]
@@ -634,7 +640,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   [PSCustomObject]@{
     src = "{{ base_remote_system }}\cmd\global"
     dst = "{{ base_local_system }}\cmd\global"
@@ -646,9 +651,9 @@ arg = [
 [[spys]]
 name = 'sync_system_cmd_local'
 input = '{{ base_remote_system }}\cmd\local\{{ hostname }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
+output = '{{ log_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 5000
+debounce = 10000
 limitkey = '{{ spy_name }}'
 events = ['Create', 'Modify', 'Remove']
 [[spys.patterns]]
@@ -660,7 +665,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   [PSCustomObject]@{
     src = "{{ base_remote_system }}\cmd\local\{{ hostname }}"
     dst = "{{ base_local_system }}\cmd\local\{{ hostname }}"
@@ -672,9 +676,9 @@ arg = [
 [[spys]]
 name = 'sync_user_cmd_global'
 input = '{{ base_remote_user }}\cmd\global'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
+output = '{{ log_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 5000
+debounce = 10000
 limitkey = '{{ spy_name }}'
 events = ['Create', 'Modify', 'Remove']
 [[spys.patterns]]
@@ -686,7 +690,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   [PSCustomObject]@{
     src = "{{ base_remote_user }}\cmd\global"
     dst = "{{ base_local_user }}\cmd\global"
@@ -698,9 +701,9 @@ arg = [
 [[spys]]
 name = 'sync_user_cmd_local'
 input = '{{ base_remote_user }}\cmd\local\{{ hostname }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
+output = '{{ log_dir }}\{{ spy_name }}'
 recursive = true
-debounce = 5000
+debounce = 10000
 limitkey = '{{ spy_name }}'
 events = ['Create', 'Modify', 'Remove']
 [[spys.patterns]]
@@ -712,7 +715,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   [PSCustomObject]@{
     src = "{{ base_remote_user }}\cmd\local\{{ hostname }}"
     dst = "{{ base_local_user }}\cmd\local\{{ hostname }}"
@@ -726,7 +728,7 @@ arg = [
 [[spys]]
 name = 'sync_ng'
 input = '{{ ng_local_dir }}'
-output = '{{ log_remote_dir }}\{{ spy_name }}'
+output = '{{ log_dir }}\{{ spy_name }}'
 recursive = true
 throttle = 600000
 limitkey = '{{ spy_name }}'
@@ -739,7 +741,6 @@ arg = [
   '''& {
   {{ funcs }}
   {{ trap_no_stop }}
-  log "event_path: {{ event_path }}"
   Start-Sleep -Seconds 30
   [PSCustomObject]@{
     src = "{{ ng_local_dir }}"
@@ -754,7 +755,7 @@ arg = [
 [[spys]]
 name = 'cmd_global'
 input = '{{ base_remote_core }}\cmd\global'
-output = '{{ log_remote_dir_core }}\{{ spy_name }}\{{ event_stem }}'
+output = '{{ log_remote_dir_core }}\global\{{ spy_name }}\{{ event_stem }}'
 debounce = 5000
 [spys.poll]
 interval = 10000
@@ -765,7 +766,7 @@ pattern = '\.cmd$|\.exe$|\.bat$'
 [[spys]]
 name = 'cmd_local'
 input = '{{ base_remote_core }}\cmd\local\{{ hostname }}'
-output = '{{ log_remote_dir_core }}\{{ spy_name }}\{{ event_stem }}'
+output = '{{ log_remote_dir_core }}\local\{{ spy_name }}\{{ event_stem }}'
 debounce = 5000
 [spys.poll]
 interval = 10000

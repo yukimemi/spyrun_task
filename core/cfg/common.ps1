@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/11/13 00:23:08.
+  .Last Change: 2024/12/05 00:16:04.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -531,6 +531,10 @@ function Exit-Task {
     log "[Exit-Task] Error ! result: [${result}]" "Red"
   }
 
+  if ([string]::IsNullOrEmpty($arg.xml)) {
+    return $result
+  }
+
   log "[Exit-Task] Remove task xml: $($arg.xml)"
   $result = Remove-ScheduledTask ([PSCustomObject]@{
       xml = $arg.xml
@@ -879,7 +883,7 @@ function Start-Init {
   $app.Add("resultPrefixFileLocal", $app.resultPrefixFileRemote.Replace($app.baseRemote, $app.baseLocal))
 
   if ($app.userType -eq "core") {
-    $app.Add("logDir", [System.IO.Path]::Combine($app.baseRemote, $app.userType, "log", $app.scope, $app.cmdName))
+    $app.Add("logDir", [System.IO.Path]::Combine($app.baseRemote, $app.userType, "log", $env:COMPUTERNAME, $app.scope, $app.cmdName))
   } else {
     $app.Add("logDir", [System.IO.Path]::Combine($app.baseLocal, $app.userType, "log", $app.scope, $app.cmdName))
   }
@@ -890,6 +894,7 @@ function Start-Init {
   Start-Transcript $app.logFile
 
   log "[Start-Init] version: $($app.version)"
+  log ([PSCustomObject]$app | ConvertTo-Json)
 
   # const value.
   $app.Add("cnst", @{

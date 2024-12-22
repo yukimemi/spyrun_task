@@ -3,19 +3,19 @@
 
 <#
   .SYNOPSIS
-    remove_log
+    move_log
   .DESCRIPTION
     古いログを remote に移動する
   .INPUTS
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/11/12 00:54:34.
+  .Last Change: 2024/11/27 18:08:03.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20241112_005434"
+$version = "20241127_180803"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -144,27 +144,36 @@ function Start-Main {
     # Execute main.
     $thresold = 1
     # move log files.
-    Sync-FS ([PSCustomObject]@{
-        src = [System.IO.Path]::Combine($app.baseLocal, "log", $env:COMPUTERNAME)
-        dst = [System.IO.Path]::Combine($app.baseRemote, "log", "log", $env:COMPUTERNAME)
-        type = "directory"
-        option = "/e /move /minage:${thresold} /r:1 /w:1"
-        async = $true
-      })
-    Sync-FS ([PSCustomObject]@{
-        src = [System.IO.Path]::Combine($app.baseLocal, "system", "log", $env:COMPUTERNAME)
-        dst = [System.IO.Path]::Combine($app.baseRemote, "system", "log", $env:COMPUTERNAME)
-        type = "directory"
-        option = "/e /move /minage:${thresold} /r:1 /w:1"
-        async = $true
-      })
-    Sync-FS ([PSCustomObject]@{
-        src = [System.IO.Path]::Combine($app.baseLocal, "user", "log", $env:COMPUTERNAME)
-        dst = [System.IO.Path]::Combine($app.baseRemote, "user", "log", $env:COMPUTERNAME)
-        type = "directory"
-        option = "/e /move /minage:${thresold} /r:1 /w:1"
-        async = $true
-      })
+    $src = [System.IO.Path]::Combine($app.baseLocal, "log")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "log", $env:COMPUTERNAME)
+          type = "directory"
+          option = "/e /move /minage:${thresold} /r:1 /w:1"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "system", "log")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "system", "log", $env:COMPUTERNAME)
+          type = "directory"
+          option = "/e /move /minage:${thresold} /r:1 /w:1"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "user", "log")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "user", "log", $env:COMPUTERNAME)
+          type = "directory"
+          option = "/e /move /minage:${thresold} /r:1 /w:1"
+          async = $true
+        })
+    }
 
     return $app.cnst.SUCCESS
 
