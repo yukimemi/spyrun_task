@@ -10,12 +10,12 @@
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/11/14 01:58:27.
+  .Last Change: 2025/04/14 00:08:27.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20241114_015827"
+$version = "20250414_000827"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -26,31 +26,40 @@ $version = "20241114_015827"
   .INPUTS
     - command: 実行コマンド
     - collect: 収集先パス
+    - csvName: 保存csv名
   .OUTPUTS
     - None
 #>
 function Get-InfoByPsCommand {
   [CmdletBinding()]
   [OutputType([void])]
-  param([string]$command, [string]$collect)
+  param([PSCustomObject]$arg)
 
   trap {
     log "[Get-InfoByPsCommand] Error $_" "Red"
     throw $_
   }
+  log "[Get-InfoByPsCommand] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
 
   $s = Get-Date
-  log "Execute [${command}] ... start"
+  log "Execute [$($arg.command)] start ..."
   $today = Get-Date -f "yyyyMMdd"
-  $collectLatest = [System.IO.Path]::Combine($collect, $command, "latest", "${env:COMPUTERNAME}_${command}.csv")
-  $collectToday = [System.IO.Path]::Combine($collect, $command, $today, "${env:COMPUTERNAME}_${command}_${today}.csv")
+  $csvName = & {
+    if ([string]::IsNullOrEmpty($arg.csvName)) {
+      return $arg.command
+    }
+    return $arg.csvName
+  }
+  log "csvName: [${csvName}]"
+  $collectLatest = [System.IO.Path]::Combine($arg.collect, $csvName, "latest", "${env:COMPUTERNAME}_${csvName}.csv")
+  $collectToday = [System.IO.Path]::Combine($arg.collect, $csvName, $today, "${env:COMPUTERNAME}_${csvName}_${today}.csv")
   New-Item -Force -ItemType Directory (Split-Path -Parent $collectLatest) | Out-Null
   New-Item -Force -ItemType Directory (Split-Path -Parent $collectToday) | Out-Null
-  Invoke-Expression $command | Select-Object * | Convert-ArrayPropertyToString | Export-Csv -NoTypeInformation -Encoding utf8 $collectLatest
+  Invoke-Expression $arg.command | Select-Object * | Convert-ArrayPropertyToString | Export-Csv -NoTypeInformation -Encoding utf8 $collectLatest
   Copy-Item -Force $collectLatest $collectToday
   $e = Get-Date
   $span = $e - $s
-  log ("Execute [${command}] end ! Elaps: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
+  log ("Execute [$($arg.command)] end ! Elaps: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
 }
 
 <#
@@ -69,7 +78,7 @@ function Start-Main {
   param()
 
   try {
-
+    $startTime = Get-Date
     . "C:\ProgramData\spyrun\core\cfg\common.ps1"
 
     $app = [PSCustomObject](Start-Init $mode $version)
@@ -140,41 +149,109 @@ function Start-Main {
       Ensure-ScheduledTask $app $xmlStr | Out-Null
       exit $app.cnst.SUCCESS
     }
-    if ((Check-ModifiedCmd ([PSCustomObject]@{
-            path = $app.cmdFile
-            xml = $xmlStr
-          })) -ne 0) {
-      return $app.cnst.ERROR
-    }
 
     # Execute main.
     $collect = [System.IO.Path]::Combine($app.clctLocal, $app.cmdName)
-    Get-InfoByPsCommand "Get-ComputerInfo" $collect
-    Get-InfoByPsCommand "Get-NetIPAddress" $collect
-    Get-InfoByPsCommand "Get-NetIPConfiguration" $collect
-    Get-InfoByPsCommand "Get-NetRoute" $collect
-    Get-InfoByPsCommand "Get-DnsClientServerAddress" $collect
-    Get-InfoByPsCommand "Get-HotFix" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_BIOS" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_Processor" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_PhysicalMemory" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_Process" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_DiskDrive" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_LogicalDisk" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_OperatingSystem" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_ComputerSystem" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_NetworkAdapter" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_Service" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_Product" $collect
-    Get-InfoByPsCommand "Get-CimInstance Win32_ComputerSystemProduct" $collect
-    # Get-InfoByPsCommand "Get-CimInstance Win32_UserAccount" $collect
-
-    Sync-FS ([PSCustomObject]@{
-        src = $app.clctLocal
-        dst = $app.clctRemote
-        type = "directory"
-        option = "/e /move /r:1 /w:1"
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-ComputerInfo"
+        collect = $collect
       })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-NetIPAddress"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-NetIPConfiguration"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-NetRoute"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-DnsClientServerAddress"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-HotFix"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_BIOS"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_Processor"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_PhysicalMemory"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_Process"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_DiskDrive"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_LogicalDisk"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_OperatingSystem"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_ComputerSystem"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_NetworkAdapter"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_Service"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_Product"
+        collect = $collect
+      })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-CimInstance Win32_ComputerSystemProduct"
+        collect = $collect
+      })
+    # Get-InfoByPsCommand ([PSCustomObject]@{
+    #     command = "Get-CimInstance Win32_UserAccount"
+    #     collect = $collect
+    #   })
+    Get-InfoByPsCommand ([PSCustomObject]@{
+        command = "Get-WinEvent -FilterXml @'
+<QueryList>
+  <Query Id='0' Path='System'>
+    <Select Path='System'>*[System[Provider[@Name='Microsoft-Windows-Kernel-General'] and (EventID=12 or EventID=13)]]</Select>
+    <Select Path='System'>*[System[Provider[@Name='Microsoft-Windows-Winlogon'] and (EventID=7001 or EventID=7002)]]</Select>
+  </Query>
+</QueryList>
+'@ | Select-Object RecordId, TimeCreated, Id, ProviderName, MachineName, UserId, Message"
+        collect = $collect
+        csvName =  "sign"
+      })
+
+    Get-ChildItem -Force -Recurse -File $app.clctLocal | ForEach-Object {
+      $src = $_.FullName
+      $dst = $src.Replace($app.clctLocal, $app.clctRemote)
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = $dst
+          type = "file"
+          option = "-Force"
+          remove = $true
+        })
+    }
 
     return $app.cnst.SUCCESS
 
@@ -189,6 +266,9 @@ function Start-Main {
       $app.mutex.Close()
       $app.mutex.Dispose()
     }
+    $endTime = Get-Date
+    $span = $endTime - $startTime
+    log ("Elapsed time: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
     log "[Start-Main] End"
     Stop-Transcript
   }

@@ -5,48 +5,50 @@
   .SYNOPSIS
     archive
   .DESCRIPTION
-    古いものを archive する
+    古いファイルを remote へ移動する
   .INPUTS
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/12/10 14:35:05.
+  .Last Change: 2025/04/10 01:12:09.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20241210_143505"
+$version = "20250410_011209"
 # Enable-RunspaceDebug -BreakAll
 
 <#
-  .SYNOPSIS
-    Remove-OldFiles
-  .DESCRIPTION
-    古いファイルを削除する
-  .INPUTS
-    - path: 削除対象パス
-    - thresold: 閾値 (日)
-  .OUTPUTS
-    - None
+.SYNOPSIS
+  Remove-OldFile
+.DESCRIPTION
+  Remove old file
+.INPUTS
+  - path: 削除パス
+  - thresold: 削除閾値
+.OUTPUTS
+  - None
 #>
-function Remove-OldFiles {
+function Remove-OldFile {
   [CmdletBinding()]
-  [OutputType([void])]
-  param([string]$path, [int]$thresold)
+  param([string]$path, [datetime]$thresold)
 
-  Get-ChildItem -Force -Recurse -File "${path}" | Where-Object {
-    $_.LastWriteTime -lt (Get-Date).AddDays($thresold)
+  log "[Remove-OldFile] path: [${path}]"
+
+  Get-ChildItem -Force -Recurse -File $path -ea Continue | Where-Object {
+    trap {
+      log $_ "Red"
+    }
+    $_.LastWriteTime -lt $thresold
   } | ForEach-Object {
+    trap {
+      log $_ "Red"
+    }
     log "Remove: $($_.FullName)"
-    Remove-Item -Force $_.FullName
-  }
-
-  Get-ChildItem -Force -Recurse -Directory "${path}" | Where-Object {
-    (Get-ChildItem -Force $_.FullName | Measure-Object).Count -eq 0
-  } | ForEach-Object {
-    Remove-Item -Force -Recurse $_.FullName
+    Remove-Item -Force $_.FullName -ea Continue
   }
 }
+
 
 <#
   .SYNOPSIS
@@ -64,7 +66,7 @@ function Start-Main {
   param()
 
   try {
-
+    $startTime = Get-Date
     . "C:\ProgramData\spyrun\core\cfg\common.ps1"
 
     $app = [PSCustomObject](Start-Init $mode $version)
@@ -141,74 +143,127 @@ function Start-Main {
 
     # Execute main.
     $thresold = 1
-    # Archive log files.
-    $src = [System.IO.Path]::Combine($app.baseRemote, "log", $env:COMPUTERNAME)
+    # move log files.
+    $src = [System.IO.Path]::Combine($app.baseLocal, "log")
     if (Test-Path $src) {
       Sync-FS ([PSCustomObject]@{
           src = $src
-          dst = [System.IO.Path]::Combine($app.baseRemote, "archive", "log", $env:COMPUTERNAME)
+          dst = [System.IO.Path]::Combine($app.baseRemote, "log", $env:COMPUTERNAME)
           type = "directory"
-          option = "/e /move /minage:${thresold} /r:1 /w:1"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
           async = $true
         })
     }
-    $src = [System.IO.Path]::Combine($app.baseRemote, "core", "log", $env:COMPUTERNAME)
+    $src = [System.IO.Path]::Combine($app.baseLocal, "system", "log")
     if (Test-Path $src) {
       Sync-FS ([PSCustomObject]@{
           src = $src
-          dst = [System.IO.Path]::Combine($app.baseRemote, "archive", "core", "log", $env:COMPUTERNAME)
+          dst = [System.IO.Path]::Combine($app.baseRemote, "system", "log", $env:COMPUTERNAME)
           type = "directory"
-          option = "/e /move /minage:${thresold} /r:1 /w:1"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
           async = $true
         })
     }
-    $src = [System.IO.Path]::Combine($app.baseRemote, "system", "log", $env:COMPUTERNAME)
+    $src = [System.IO.Path]::Combine($app.baseLocal, "user", "log")
     if (Test-Path $src) {
       Sync-FS ([PSCustomObject]@{
           src = $src
-          dst = [System.IO.Path]::Combine($app.baseRemote, "archive", "system", "log", $env:COMPUTERNAME)
+          dst = [System.IO.Path]::Combine($app.baseRemote, "user", "log", $env:COMPUTERNAME)
           type = "directory"
-          option = "/e /move /minage:${thresold} /r:1 /w:1"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
           async = $true
         })
     }
-    $src = [System.IO.Path]::Combine($app.baseRemote, "user", "log", $env:COMPUTERNAME)
+    $src = [System.IO.Path]::Combine($app.baseLocal, "if", "sync_result")
     if (Test-Path $src) {
       Sync-FS ([PSCustomObject]@{
           src = $src
-          dst = [System.IO.Path]::Combine($app.baseRemote, "archive", "user", "log", $env:COMPUTERNAME)
+          dst = [System.IO.Path]::Combine($app.baseRemote, "if", $env:COMPUTERNAME, "sync_result")
           type = "directory"
-          option = "/e /move /minage:${thresold} /r:1 /w:1"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
           async = $true
         })
     }
-
-    # Remove old archive.
-    $archive = [System.IO.Path]::Combine($app.baseRemote, "archive", "log", $env:COMPUTERNAME)
-    $coreArchive = [System.IO.Path]::Combine($app.baseRemote, "archive", "core", "log", $env:COMPUTERNAME)
-    $systemArchive = [System.IO.Path]::Combine($app.baseRemote, "archive", "system", "log", $env:COMPUTERNAME)
-    $userArchive = [System.IO.Path]::Combine($app.baseRemote, "archive", "user", "log", $env:COMPUTERNAME)
-    $thresold = -3
-    $s = @"
-@set __SCRIPTPATH=%~f0&@powershell -NoProfile -ExecutionPolicy ByPass -InputFormat None "`$s=[scriptblock]::create((gc -enc utf8 -li \"%~f0\"|?{`$_.readcount -gt 2})-join\"``n\");&`$s" %*
-@exit /b %errorlevel%
-function log { ${Function:log} }
-function Remove-OldFiles { ${Function:Remove-OldFiles} }
-Remove-OldFiles $archive $thresold
-Remove-OldFiles $coreArchive $thresold
-Remove-OldFiles $systemArchive $thresold
-Remove-OldFiles $userArchive $thresold
-Remove-Item -Force ([System.IO.Path]::GetFullPath(`$env:__SCRIPTPATH))
-"@
-
-    $scriptPath = "${env:tmp}\$($app.cmdName).cmd"
-    [System.IO.File]::WriteAllText($scriptPath, $s)
-    Sync-FS ([PSCustomObject]@{
-        src = $scriptPath
-        dst = [System.IO.Path]::Combine($app.baseRemote, "core", "cmd", "local", $env:COMPUTERNAME, $app.cmdFileName)
-        type = "file"
-        async = $true
-      })
+    $src = [System.IO.Path]::Combine($app.baseLocal, "if", "remove_result")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "if", $env:COMPUTERNAME, "remove_result")
+          type = "directory"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "if", "exec_result")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "if", $env:COMPUTERNAME, "exec_result")
+          type = "directory"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "system", "if", "sync_result")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "system", "if", $env:COMPUTERNAME, "sync_result")
+          type = "directory"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "system", "if", "remove_result")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "system", "if", $env:COMPUTERNAME, "remove_result")
+          type = "directory"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "system", "if", "exec_result")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "system", "if", $env:COMPUTERNAME, "exec_result")
+          type = "directory"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "user", "if", "sync_result")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "user", "if", $env:COMPUTERNAME, "sync_result")
+          type = "directory"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "user", "if", "remove_result")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "user", "if", $env:COMPUTERNAME, "remove_result")
+          type = "directory"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
+          async = $true
+        })
+    }
+    $src = [System.IO.Path]::Combine($app.baseLocal, "user", "if", "exec_result")
+    if (Test-Path $src) {
+      Sync-FS ([PSCustomObject]@{
+          src = $src
+          dst = [System.IO.Path]::Combine($app.baseRemote, "user", "if", $env:COMPUTERNAME, "exec_result")
+          type = "directory"
+          option = "/s /mov /minage:${thresold} /r:1 /w:1 /xx"
+          async = $true
+        })
+    }
 
     return $app.cnst.SUCCESS
 
@@ -223,6 +278,9 @@ Remove-Item -Force ([System.IO.Path]::GetFullPath(`$env:__SCRIPTPATH))
       $app.mutex.Close()
       $app.mutex.Dispose()
     }
+    $endTime = Get-Date
+    $span = $endTime - $startTime
+    log ("Elapsed time: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
     log "[Start-Main] End"
     Stop-Transcript
   }

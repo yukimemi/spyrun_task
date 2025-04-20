@@ -1,11 +1,11 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/12/20 16:45:11.
+# Last Change : 2025/03/30 14:48:19.
 # =============================================================================
 
 [vars]
-version = '20241220_164511'
+version = '20250330_144819'
 
 base_local = '{{ cmd_dir }}\..'
 base_local_core = '{{ base_local }}\core'
@@ -53,7 +53,7 @@ stop_force_path_user = '{{ base_local_user }}\stop_force.flg'
 
 hostname = '{{ env(arg="COMPUTERNAME") }}'
 
-sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$'
+sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$|\.xml$'
 
 funcs = '''
 function log {
@@ -66,24 +66,24 @@ function log {
 
 z_funcs = '''
 function sync_cfg {
-  & robocopy /mir "{{ cfg_remote_dir_core }}" "{{ cfg_local_dir_core }}"
-  & robocopy /mir "{{ cfg_remote_dir_system }}" "{{ cfg_local_dir_system }}"
-  & robocopy /mir "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }}"
+  & robocopy /mir /r:3 /w:3 "{{ cfg_remote_dir_core }}" "{{ cfg_local_dir_core }}"
+  & robocopy /mir /r:3 /w:3 "{{ cfg_remote_dir_system }}" "{{ cfg_local_dir_system }}"
+  & robocopy /mir /r:3 /w:3 "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }}"
 }
 function sync_cmd {
-  & robocopy /mir "{{ base_remote_system }}\cmd\global" "{{ base_local_system }}\cmd\global"
-  & robocopy /mir "{{ base_remote_system }}\cmd\local\{{ hostname }}" "{{ base_local_system }}\cmd\local\{{ hostname }}"
-  & robocopy /mir "{{ base_remote_user }}\cmd\global" "{{ base_local_user }}\cmd\global"
-  & robocopy /mir "{{ base_remote_user }}\cmd\local\{{ hostname }}" "{{ base_local_user }}\cmd\local\{{ hostname }}"
+  & robocopy /mir /r:3 /w:3 "{{ base_remote_system }}\cmd\global" "{{ base_local_system }}\cmd\global"
+  & robocopy /mir /r:3 /w:3 "{{ base_remote_system }}\cmd\local\{{ hostname }}" "{{ base_local_system }}\cmd\local\{{ hostname }}"
+  & robocopy /mir /r:3 /w:3 "{{ base_remote_user }}\cmd\global" "{{ base_local_user }}\cmd\global"
+  & robocopy /mir /r:3 /w:3 "{{ base_remote_user }}\cmd\local\{{ hostname }}" "{{ base_local_user }}\cmd\local\{{ hostname }}"
 }
 function sync_log {
-  & robocopy /e /move /minage:1 /r:1 /w:1 "{{ log_dir }}" "{{ log_remote_dir }}"
-  & robocopy /e /move /minage:1 /r:1 /w:1 "{{ log_local_dir_core }}" "{{ log_remote_dir_core }}"
-  & robocopy /e /move /minage:1 /r:1 /w:1 "{{ log_local_dir_system }}" "{{ log_remote_dir_system }}"
-  & robocopy /e /move /minage:1 /r:1 /w:1 "{{ log_local_dir_user }}" "{{ log_remote_dir_user }}"
+  & robocopy /s /mov /minage:1 /r:1 /w:1 /xx "{{ log_dir }}" "{{ log_remote_dir }}"
+  & robocopy /s /mov /minage:1 /r:1 /w:1 /xx "{{ log_local_dir_core }}" "{{ log_remote_dir_core }}"
+  & robocopy /s /mov /minage:1 /r:1 /w:1 /xx "{{ log_local_dir_system }}" "{{ log_remote_dir_system }}"
+  & robocopy /s /mov /minage:1 /r:1 /w:1 /xx "{{ log_local_dir_user }}" "{{ log_remote_dir_user }}"
 }
 function sync_ng {
-  & robocopy /e /mov /r:1 /w:1 "{{ ng_local_dir }}" "{{ ng_remote_dir }}"
+  & robocopy /s /mov /r:1 /w:1 /xx "{{ ng_local_dir }}" "{{ ng_remote_dir }}"
 }
 function move_to_ng {
   param([string]$src)
@@ -127,6 +127,7 @@ trap {
 }
 '''
 
+z_init_flg = '{{ base_local }}\flg\init_{{ version }}.flg'
 z_init_fn = '''
 {{ z_funcs }}
 $script:stopFlg = $false
@@ -135,6 +136,8 @@ $copy = {
   param([string]$local, [string]$remote, [bool]$bin = $false)
   $localHash = (Get-FileHash $local).Hash
   $remoteHash = (Get-FileHash $remote).Hash
+  log "local: [${local}], hash: [${localHash}]"
+  log "remote: [${remote}], hash: [$remoteHash]"
   if ($remoteHash -ne $localHash) {
     $script:stopFile = $remote
     if ($bin) {
@@ -167,6 +170,13 @@ $copy = {
 & $copy "{{ cfg_local_dir_core }}\common.ps1" "{{ cfg_remote_dir_core }}\common.ps1"
 & $copy "{{ cfg_local_dir_core }}\launch.js" "{{ cfg_remote_dir_core }}\launch.js"
 
+Unblock-File '{{ cmd_path }}' -ea Continue
+$mp = Get-MpPreference
+if ($mp.ExclusionPath -notcontains "%ProgramData%\spyrun") {
+  log 'Add-MpPreference -ExclusionPath @("%ProgramData%\spyrun")'
+  Add-MpPreference -ExclusionPath @("%ProgramData%\spyrun")
+}
+
 sync_cfg
 sync_cmd
 sync_ng
@@ -175,8 +185,7 @@ if ($script:stopFlg) {
   "spy_name: [{{ spy_name }}], cause: [${script:stopFile}] stop flg is true" | Set-Content -Encoding utf8 "{{ stop_force_path }}"
 }
 
-$initFlg = "{{ base_local }}\flg\init_{{ version }}.flg"
-if (Test-Path $initFlg) {
+if (Test-Path "{{ z_init_flg }}") {
   return
 }
 New-Item -Force -ItemType Directory "{{ base_remote_core }}\cmd\local\{{ hostname }}" | Out-Null
@@ -185,19 +194,23 @@ New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\local\{{ hostnam
 New-Item -Force -ItemType Directory "{{ base_local }}\task\register" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\task\unregister" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\task\hash" | Out-Null
-New-Item -Force -ItemType Directory "{{ base_local }}\sync" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\ng" | Out-Null
-New-Item -Force -ItemType Directory "{{ base_local }}\remove" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\del" | Out-Null
 New-Item -Force -ItemType Directory "{{ log_local_dir_system }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ log_local_dir_user }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\if\sync" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\if\sync_result" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\if\remove" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\if\remove_result" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\if\exec" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_local }}\if\exec_result" | Out-Null
 
 Get-ChildItem -Force -Recurse -File -ea Continue "{{ base_local }}" | ForEach-Object {
   Unblock-File $_.FullName -ea Continue
 }
 icacls "{{ base_local }}" /grant EveryOne:F /t
 
-New-Item -Force -ItemType File $initFlg | Out-Null
+New-Item -Force -ItemType File "{{ z_init_flg }}" | Out-Null
 '''
 
 [cfg]
@@ -206,6 +219,7 @@ stop_flg = '{{ cmd_dir }}\stop.flg'
 [log]
 path = '{{ base_local }}\log\{{ cmd_stem }}.log'
 level = 'warn'
+switch = true
 
 [init]
 cmd = 'powershell'
@@ -218,28 +232,28 @@ arg = [
   log "{{ version }}"
   function Ensure-ScheduledTask {
     param([string]$uri, [string]$taskPath, [string]$taskName, [string]$repetition, [string]$repetitionStr, [string]$cmd, [string]$arg, [bool]$runas = $true)
-    $registered = Get-ScheduledTask | Where-Object { $_.URI -eq $uri }
-    if (($null -eq $registered) -or ($registered.Triggers.Repetition.Interval -ne $repetition)) {
-      log "Register ScheduledTask ! (${repetition})"
-      $now = Get-Date -f "yyyy/MM/dd HH:mm"
-      $action = & {
-        if ([string]::IsNullOrEmpty($arg)) {
-          return New-ScheduledTaskAction -Execute "${cmd}" -WorkingDirectory "{{ cmd_dir }}"
-        } else {
-          return New-ScheduledTaskAction -Execute "${cmd}" -Argument "${arg}" -WorkingDirectory "{{ cmd_dir }}"
-        }
-      }
-      $trigger = New-ScheduledTaskTrigger -Once -At $now -RepetitionInterval $repetitionStr
-      $settings = New-ScheduledTaskSettingsSet -WakeToRun -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -DontStopOnIdleEnd -StartWhenAvailable
-      $principal = & {
-        if ($runas) {
-          return New-ScheduledTaskPrincipal -UserId System -RunLevel Highest
-        } else {
-          return New-ScheduledTaskPrincipal -GroupId Users
-        }
-      }
-      Register-ScheduledTask -Force -TaskPath $taskPath -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal
+    if (Test-Path "{{ z_init_flg }}") {
+      return
     }
+    log "Register ScheduledTask ! (${repetition})"
+    $now = Get-Date -f "yyyy/MM/dd HH:mm"
+    $action = & {
+      if ([string]::IsNullOrEmpty($arg)) {
+        return New-ScheduledTaskAction -Execute "${cmd}" -WorkingDirectory "{{ cmd_dir }}"
+      } else {
+        return New-ScheduledTaskAction -Execute "${cmd}" -Argument "${arg}" -WorkingDirectory "{{ cmd_dir }}"
+      }
+    }
+    $trigger = New-ScheduledTaskTrigger -Once -At $now -RepetitionInterval $repetitionStr
+    $settings = New-ScheduledTaskSettingsSet -WakeToRun -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -DontStopOnIdleEnd -StartWhenAvailable
+    $principal = & {
+      if ($runas) {
+        return New-ScheduledTaskPrincipal -UserId System -RunLevel Highest
+      } else {
+        return New-ScheduledTaskPrincipal -GroupId Users
+      }
+    }
+    Register-ScheduledTask -Force -TaskPath $taskPath -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal
   }
 
   Ensure-ScheduledTask "\spyrun\spyrun" "\spyrun" "spyrun" "PT5M" "00:05:00" "{{ cmd_path }}" '' $true
@@ -256,7 +270,7 @@ name = 'register_task'
 input = '{{ base_local }}\task\register'
 output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 recursive = true
-throttle = 10000
+debounce = 10000
 limitkey = '{{ event_path }}'
 [spys.walk]
 pattern = '\.xml$'
@@ -322,7 +336,7 @@ name = 'unregister_task'
 input = '{{ base_local }}\task\unregister'
 output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 recursive = true
-throttle = 10000
+debounce = 10000
 limitkey = '{{ event_path }}'
 [spys.walk]
 pattern = '\.xml$'
@@ -412,35 +426,6 @@ arg = ['-NoProfile', '-Command', '''& {
   {{ z_init_fn }}
 }''']
 
-# Remove
-[[spys]]
-name = 'remove'
-input = '{{ base_local }}\remove'
-output = '{{ log_dir }}\{{ spy_name }}'
-debounce = 10000
-limitkey = '{{ event_path }}'
-[spys.walk]
-pattern = '\.json$'
-[[spys.patterns]]
-pattern = '\.json$'
-cmd = 'powershell'
-arg = ['-NoProfile', '-Command', '''& {
-  {{ funcs }}
-  {{ z_funcs }}
-  {{ trap_no_stop }}
-  $json = Get-Content -Encoding utf8 '{{ event_path }}'
-  log "json: ${json}"
-  $cfg = $json | ConvertFrom-Json
-  log "path: [$($cfg.path)]"
-  if (Test-Path $cfg.path) {
-    log "Remove: [$($cfg.path)]"
-    Remove-Item -Force -Recurse $cfg.path
-  } else {
-    log "$($cfg.path) is not found !"
-  }
-  Remove-Item -Force '{{ event_path }}'
-}''']
-
 # Remove cmd
 [[spys]]
 name = 'remove_system_cmd'
@@ -451,7 +436,7 @@ debounce = 10000
 limitkey = '{{ event_path }}'
 events = ['Remove']
 [[spys.patterns]]
-pattern = '.*'
+pattern = '{{ sync_pattern }}'
 cmd = 'powershell'
 arg = [
   '-NoProfile',
@@ -475,7 +460,7 @@ debounce = 10000
 limitkey = '{{ event_path }}'
 events = ['Remove']
 [[spys.patterns]]
-pattern = '.*'
+pattern = '{{ sync_pattern }}'
 cmd = 'powershell'
 arg = [
   '-NoProfile',
@@ -494,9 +479,83 @@ arg = [
 # Sync
 [[spys]]
 name = 'sync'
-input = '{{ base_local }}\sync'
+input = '{{ base_local }}\if\sync'
 output = '{{ log_dir }}\{{ spy_name }}'
-throttle = 30000
+debounce = 5000
+limitkey = '{{ event_path }}'
+[spys.walk]
+pattern = '\.json$'
+[[spys.patterns]]
+pattern = '\.json$'
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ z_funcs }}
+  $ErrorActionPreference = "Stop"
+  log "spy_name: [{{ spy_name }}]"
+  log "event_path: {{ event_path }}"
+  log "event_kind: {{ event_kind }}"
+  log "limitkey: {{ limitkey }}"
+  try {
+    $json = Get-Content -Encoding utf8 '{{ event_path }}'
+    log "json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "src: [$($cfg.src)]"
+    log "dst: [$($cfg.dst)]"
+    log "type: [$($cfg.type)]"
+    log "option: [$($cfg.option)]"
+    log "remove: [$($cfg.remove)]"
+    $result = 0
+    if (!(Test-Path $cfg.src)) {
+      throw "$($cfg.src) is not found !"
+    }
+    if ($cfg.type -eq "directory") {
+      Invoke-Expression "& robocopy $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+      $result = $LASTEXITCODE
+      if ($result -ge 8) {
+        throw "robocopy error !"
+      }
+    } elseif ($cfg.type -eq "file") {
+      New-Item -Force -ItemType Directory (Split-Path -Parent $cfg.dst) | Out-Null
+      Invoke-Expression "Copy-Item $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+    } else {
+      throw "Error `type` must be `file` or `directory` (type: $($cfg.type))"
+    }
+    Get-ChildItem -Force -Recurse -File $cfg.dst | ForEach-Object {
+      Unblock-File $_.FullName
+    }
+    if ($cfg.remove) {
+      log "Remove flg on, so remove [$($cfg.src)] !"
+      Remove-Item -Force -Recurse $cfg.src
+    }
+    Remove-Item -Force '{{ event_path }}'
+    $result = 0
+  } catch {
+    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
+    log "{{ spy_name }} Error ! $_"
+    move_to_ng '{{ event_path }}'
+  } finally {
+    [PSCustomObject]@{
+      src = "$($cfg.src)"
+      dst = "$($cfg.dst)"
+      type = "$($cfg.type)"
+      option = "$($cfg.option)"
+      remove = "$($cfg.remove)"
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync_result\{{ event_name }}'
+  }
+}''',
+]
+
+# Remove
+[[spys]]
+name = 'remove'
+input = '{{ base_local }}\if\remove'
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 5000
 limitkey = '{{ event_path }}'
 [spys.walk]
 pattern = '\.json$'
@@ -517,36 +576,77 @@ arg = [
     $json = Get-Content -Encoding utf8 '{{ event_path }}'
     log "json: ${json}"
     $cfg = $json | ConvertFrom-Json
-    log "src: [$($cfg.src)]"
-    log "dst: [$($cfg.dst)]"
-    log "type: [$($cfg.type)]"
-    log "option: [$($cfg.option)]"
-    log "remove: [$($cfg.remove)]"
-    if (!(Test-Path $cfg.src)) {
-      throw "$($cfg.src) is not found !"
-    }
-    if ($cfg.type -eq "directory") {
-      Invoke-Expression "& robocopy $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
-      if ($LASTEXITCODE -ge 8) {
-        throw "robocopy error !"
-      }
-    } elseif ($cfg.type -eq "file") {
-      New-Item -Force -ItemType Directory (Split-Path -Parent $cfg.dst) | Out-Null
-      Invoke-Expression "Copy-Item $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+    log "path: [$($cfg.path)]"
+    $result = 0
+    if (Test-Path $cfg.path) {
+      log "Remove: [$($cfg.path)]"
+      Remove-Item -Force -Recurse $cfg.path
     } else {
-      throw "Error `type` must be `file` or `directory` (type: $($cfg.type))"
-    }
-    Get-ChildItem -Force -Recurse -File $cfg.dst | ForEach-Object {
-      Unblock-File $_.FullName
-    }
-    if ($cfg.remove) {
-      log "Remove flg on, so remove [$($cfg.src)] !"
-      Remove-Item -Force -Recurse $cfg.src
+      log "$($cfg.path) is not found !"
     }
     Remove-Item -Force '{{ event_path }}'
+    $result = 0
   } catch {
+    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
     log "{{ spy_name }} Error ! $_"
     move_to_ng '{{ event_path }}'
+  } finally {
+    [PSCustomObject]@{
+      path = "$($cfg.path)"
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\remove_result\{{ event_name }}'
+  }
+}''',
+]
+
+# Exec
+[[spys]]
+name = 'exec'
+input = '{{ base_local }}\if\exec'
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 5000
+limitkey = '{{ event_path }}'
+[spys.walk]
+pattern = '\.json$'
+[[spys.patterns]]
+pattern = '\.json$'
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ z_funcs }}
+  $ErrorActionPreference = "Stop"
+  log "spy_name: [{{ spy_name }}]"
+  log "event_path: {{ event_path }}"
+  log "event_kind: {{ event_kind }}"
+  try {
+    $json = Get-Content -Encoding utf8 '{{ event_path }}'
+    log "json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "cmd: [$($cfg.cmd)]"
+    log "arg: [$($cfg.arg)]"
+    log "dir: [$($cfg.dir)]"
+    $result = 0
+    . '{{ base_local }}\core\cfg\common.ps1'
+    $ret = Execute-Process ([PSCustomObject]@{ cmd = $cfg.cmd; arg = $cfg.arg -join " "; dir = $cfg.dir })
+    log "code: [$($ret.code)]"
+    log "stdout: [$($ret.stdout)]"
+    log "stderr: [$($ret.stderr)]"
+    Remove-Item -Force '{{ event_path }}'
+    $result = $ret.code
+  } catch {
+    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
+    log "{{ spy_name }} Error ! $_"
+    move_to_ng '{{ event_path }}'
+  } finally {
+    [PSCustomObject]@{
+      cmd = "$($cfg.cmd)"
+      arg = "$($cfg.arg)"
+      dir = "$($cfg.dir)"
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\exec_result\{{ event_name }}'
   }
 }''',
 ]
@@ -571,8 +671,8 @@ arg = [
     src = "{{ cfg_remote_dir_core }}"
     dst = "{{ cfg_local_dir_core }}"
     type = "directory"
-    option = "/mir"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+    option = "/mir /r:3 /w:3"
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync\{{ spy_name }}.json'
 }''',
 ]
 [[spys]]
@@ -595,7 +695,7 @@ arg = [
     dst = "{{ cfg_local_dir_system }}"
     type = "directory"
     option = "/e"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync\{{ spy_name }}.json'
 }''',
 ]
 [[spys]]
@@ -618,7 +718,7 @@ arg = [
     dst = "{{ cfg_local_dir_user }}"
     type = "directory"
     option = "/e"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync\{{ spy_name }}.json'
 }''',
 ]
 
@@ -644,8 +744,8 @@ arg = [
     src = "{{ base_remote_system }}\cmd\global"
     dst = "{{ base_local_system }}\cmd\global"
     type = "directory"
-    option = "/mir"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+    option = "/mir /r:3 /w:3"
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync\{{ spy_name }}.json'
 }''',
 ]
 [[spys]]
@@ -669,8 +769,8 @@ arg = [
     src = "{{ base_remote_system }}\cmd\local\{{ hostname }}"
     dst = "{{ base_local_system }}\cmd\local\{{ hostname }}"
     type = "directory"
-    option = "/mir"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+    option = "/mir /r:3 /w:3"
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync\{{ spy_name }}.json'
 }''',
 ]
 [[spys]]
@@ -694,8 +794,8 @@ arg = [
     src = "{{ base_remote_user }}\cmd\global"
     dst = "{{ base_local_user }}\cmd\global"
     type = "directory"
-    option = "/mir"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+    option = "/mir /r:3 /w:3"
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync\{{ spy_name }}.json'
 }''',
 ]
 [[spys]]
@@ -719,8 +819,8 @@ arg = [
     src = "{{ base_remote_user }}\cmd\local\{{ hostname }}"
     dst = "{{ base_local_user }}\cmd\local\{{ hostname }}"
     type = "directory"
-    option = "/mir"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+    option = "/mir /r:3 /w:3"
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync\{{ spy_name }}.json'
 }''',
 ]
 
@@ -730,10 +830,10 @@ name = 'sync_ng'
 input = '{{ ng_local_dir }}'
 output = '{{ log_dir }}\{{ spy_name }}'
 recursive = true
-throttle = 600000
+debounce = 600000
 limitkey = '{{ spy_name }}'
 [[spys.patterns]]
-pattern = '.*'
+pattern = '{{ sync_pattern }}'
 cmd = 'powershell'
 arg = [
   '-NoProfile',
@@ -746,8 +846,8 @@ arg = [
     src = "{{ ng_local_dir }}"
     dst = "{{ ng_remote_dir }}"
     type = "directory"
-    option = "/e /mov /r:1 /w:1"
-  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\sync\{{ spy_name }}.json'
+    option = "/s /mov /r:1 /w:1 /xx"
+  } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync\{{ spy_name }}.json'
 }''',
 ]
 

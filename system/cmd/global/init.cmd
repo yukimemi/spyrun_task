@@ -10,12 +10,12 @@
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/12/02 01:08:45.
+  .Last Change: 2025/03/26 01:13:13.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20241202_010845"
+$version = "20250326_011313"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -34,7 +34,7 @@ function Start-Main {
   param()
 
   try {
-
+    $startTime = Get-Date
     . "C:\ProgramData\spyrun\core\cfg\common.ps1"
 
     $app = [PSCustomObject](Start-Init $mode $version)
@@ -187,6 +187,9 @@ function Start-Main {
       $app.mutex.Close()
       $app.mutex.Dispose()
     }
+    $endTime = Get-Date
+    $span = $endTime - $startTime
+    log ("Elapsed time: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
     log "[Start-Main] End"
     Stop-Transcript
   }

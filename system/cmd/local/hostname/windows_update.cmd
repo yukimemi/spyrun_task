@@ -9,7 +9,7 @@
   .INPUTS
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change : 2024/09/16 19:32:45.
+  .Last Change : 2025/02/22 16:19:59.
 #>
 param()
 $ErrorActionPreference = "Stop"
@@ -34,7 +34,7 @@ function Start-Main {
   param()
 
   try {
-
+    $startTime = Get-Date
     . "C:\ProgramData\spyrun\core\cfg\common.ps1"
 
     $app = [PSCustomObject](Start-Init $version)
@@ -183,6 +183,9 @@ function Start-Main {
       $app.mutex.Close()
       $app.mutex.Dispose()
     }
+    $endTime = Get-Date
+    $span = $endTime - $startTime
+    log ("Elapsed time: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
     log "[Start-Main] End"
     Stop-Transcript
   }

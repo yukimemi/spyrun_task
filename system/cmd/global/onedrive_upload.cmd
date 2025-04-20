@@ -8,15 +8,14 @@
     OneDrive のファイルをアップロードする
   .INPUTS
     - mode: "register": タスク登録, "main": 処理実行
-    - async: "true": 非同期実行, "false": 同期実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/11/12 00:57:06.
+  .Last Change: 2025/04/06 09:17:40.
 #>
-param([string]$mode = "register", [bool]$async = $false)
+param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20241112_005706"
+$version = "20250406_091740"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -35,7 +34,7 @@ function Start-Main {
   param()
 
   try {
-
+    $startTime = Get-Date
     . "C:\ProgramData\spyrun\core\cfg\common.ps1"
 
     $app = [PSCustomObject](Start-Init $mode $version)
@@ -50,28 +49,28 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT1H</Interval>
+        <Interval>PT3H</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
       <Enabled>true</Enabled>
-      <RandomDelay>PT1H</RandomDelay>
+      <RandomDelay>PT3H</RandomDelay>
     </TimeTrigger>
-    <LogonTrigger>
+    <BootTrigger>
       <Enabled>true</Enabled>
-    </LogonTrigger>
+    </BootTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <GroupId>S-1-5-32-545</GroupId>
-      <RunLevel>LeastPrivilege</RunLevel>
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
     </Principal>
   </Principals>
   <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>true</AllowHardTerminate>
+    <AllowHardTerminate>false</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
     <IdleSettings>
@@ -85,7 +84,7 @@ function Start-Main {
     <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <WakeToRun>true</WakeToRun>
-    <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <Priority>7</Priority>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
@@ -94,8 +93,8 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>C:\Windows\system32\wscript.exe</Command>
-      <Arguments>"$($app.spyrunBase)\core\cfg\launch.js" "$($app.cmdFile)" main</Arguments>
+      <Command>$($app.cmdFile)</Command>
+      <Arguments>main</Arguments>
       <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
@@ -106,18 +105,18 @@ function Start-Main {
       Ensure-ScheduledTask $app $xmlStr | Out-Null
       exit $app.cnst.SUCCESS
     }
-    if ((Check-ModifiedCmd ([PSCustomObject]@{
-            path = $app.cmdFile
-            xml = $xmlStr
-          })) -ne 0) {
-      return $app.cnst.ERROR
-    }
 
     # Execute main.
-    $result = Execute-Process ([PSCustomObject]@{ cmd = "attrib"; arg = "+u /s `"${env:OneDrive}`""; })
-    log "code: $($result.code)"
-    log "stdout: $($result.stdout)"
-    log "stderr: $($result.stderr)"
+    $oneDrivePathFlg = [System.IO.Path]::Combine($app.flgLocal, "onedrive_upload.flg")
+    if (Test-Path $oneDrivePathFlg) {
+      $oneDrivePath = Get-Content $oneDrivePathFlg
+      $result = Execute-Process ([PSCustomObject]@{ cmd = "attrib"; arg = "+u /s `"${oneDrivePath}`""; })
+      log "code: [$($result.code)]"
+      log "stdout: [$($result.stdout)]"
+      log "stderr: [$($result.stderr)]"
+    } else {
+      log "${oneDrivePathFlg} is not found !"
+    }
 
     return $app.cnst.SUCCESS
 
@@ -132,6 +131,9 @@ function Start-Main {
       $app.mutex.Close()
       $app.mutex.Dispose()
     }
+    $endTime = Get-Date
+    $span = $endTime - $startTime
+    log ("Elapsed time: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
     log "[Start-Main] End"
     Stop-Transcript
   }

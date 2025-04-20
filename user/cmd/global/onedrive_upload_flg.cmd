@@ -3,52 +3,21 @@
 
 <#
   .SYNOPSIS
-    move_log
+    onedrive_upload_flg
   .DESCRIPTION
-    古いログを remote に移動する
+    OneDrive のパス情報を記録する
   .INPUTS
     - mode: "register": タスク登録, "main": 処理実行
+    - async: "true": 非同期実行, "false": 同期実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/11/27 18:08:03.
+  .Last Change: 2025/04/06 09:15:41.
 #>
-param([string]$mode = "register")
+param([string]$mode = "register", [bool]$async = $false)
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20241127_180803"
+$version = "20250406_091541"
 # Enable-RunspaceDebug -BreakAll
-
-<#
-.SYNOPSIS
-  Remove-OldFile
-.DESCRIPTION
-  Remove old file
-.INPUTS
-  - path: 削除パス
-  - thresold: 削除閾値
-.OUTPUTS
-  - None
-#>
-function Remove-OldFile {
-  [CmdletBinding()]
-  param([string]$path, [datetime]$thresold)
-
-  log "[Remove-OldFile] path: [${path}]"
-
-  Get-ChildItem -Force -Recurse -File $path -ea Continue | Where-Object {
-    trap {
-      log $_ "Red"
-    }
-    $_.LastWriteTime -lt $thresold
-  } | ForEach-Object {
-    trap {
-      log $_ "Red"
-    }
-    log "Remove: $($_.FullName)"
-    Remove-Item -Force $_.FullName -ea Continue
-  }
-}
-
 
 <#
   .SYNOPSIS
@@ -66,7 +35,7 @@ function Start-Main {
   param()
 
   try {
-
+    $startTime = Get-Date
     . "C:\ProgramData\spyrun\core\cfg\common.ps1"
 
     $app = [PSCustomObject](Start-Init $mode $version)
@@ -81,25 +50,28 @@ function Start-Main {
   <Triggers>
     <TimeTrigger>
       <Repetition>
-        <Interval>PT3H</Interval>
+        <Interval>PT10H</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
       <Enabled>true</Enabled>
-      <RandomDelay>PT3H</RandomDelay>
+      <RandomDelay>PT10H</RandomDelay>
     </TimeTrigger>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>S-1-5-18</UserId>
-      <RunLevel>HighestAvailable</RunLevel>
+      <GroupId>S-1-5-32-545</GroupId>
+      <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
   </Principals>
   <Settings>
-    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>false</AllowHardTerminate>
+    <AllowHardTerminate>true</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
     <IdleSettings>
@@ -113,7 +85,7 @@ function Start-Main {
     <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <WakeToRun>true</WakeToRun>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>
     <Priority>7</Priority>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
@@ -122,8 +94,8 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$($app.cmdFile)</Command>
-      <Arguments>main</Arguments>
+      <Command>C:\Windows\system32\wscript.exe</Command>
+      <Arguments>"$($app.spyrunBase)\core\cfg\launch.js" "$($app.cmdFile)" main</Arguments>
       <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
@@ -134,46 +106,16 @@ function Start-Main {
       Ensure-ScheduledTask $app $xmlStr | Out-Null
       exit $app.cnst.SUCCESS
     }
-    if ((Check-ModifiedCmd ([PSCustomObject]@{
-            path = $app.cmdFile
-            xml = $xmlStr
-          })) -ne 0) {
-      return $app.cnst.ERROR
-    }
 
     # Execute main.
-    $thresold = 1
-    # move log files.
-    $src = [System.IO.Path]::Combine($app.baseLocal, "log")
-    if (Test-Path $src) {
-      Sync-FS ([PSCustomObject]@{
-          src = $src
-          dst = [System.IO.Path]::Combine($app.baseRemote, "log", $env:COMPUTERNAME)
-          type = "directory"
-          option = "/e /move /minage:${thresold} /r:1 /w:1"
-          async = $true
-        })
+    if ([string]::IsNullOrEmpty($env:ONEDRIVE)) {
+      log "%ONEDRIVE% is Null or Empty !"
+      exit $app.cnst.ERROR
     }
-    $src = [System.IO.Path]::Combine($app.baseLocal, "system", "log")
-    if (Test-Path $src) {
-      Sync-FS ([PSCustomObject]@{
-          src = $src
-          dst = [System.IO.Path]::Combine($app.baseRemote, "system", "log", $env:COMPUTERNAME)
-          type = "directory"
-          option = "/e /move /minage:${thresold} /r:1 /w:1"
-          async = $true
-        })
-    }
-    $src = [System.IO.Path]::Combine($app.baseLocal, "user", "log")
-    if (Test-Path $src) {
-      Sync-FS ([PSCustomObject]@{
-          src = $src
-          dst = [System.IO.Path]::Combine($app.baseRemote, "user", "log", $env:COMPUTERNAME)
-          type = "directory"
-          option = "/e /move /minage:${thresold} /r:1 /w:1"
-          async = $true
-        })
-    }
+    $oneDrivePathFlg = [System.IO.Path]::Combine($app.flgLocal, "onedrive_upload.flg")
+    New-Item -Force -ItemType Directory (Split-Path -Parent $oneDrivePathFlg) | Out-Null
+    log "${env:ONEDRIVE} -> ${oneDrivePathFlg}"
+    $env:ONEDRIVE | Set-Content -Encoding utf8 $oneDrivePathFlg
 
     return $app.cnst.SUCCESS
 
@@ -188,6 +130,9 @@ function Start-Main {
       $app.mutex.Close()
       $app.mutex.Dispose()
     }
+    $endTime = Get-Date
+    $span = $endTime - $startTime
+    log ("Elapsed time: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
     log "[Start-Main] End"
     Stop-Transcript
   }

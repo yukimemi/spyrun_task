@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/12/05 00:16:04.
+  .Last Change: 2025/04/06 09:02:03.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -95,6 +95,7 @@ function Execute-Process {
   param([PSCustomObject]$cmdArg)
 
   try {
+    log "[Execute-Process] cmdArg: $([PSCustomObject]$cmdArg | ConvertTo-Json)"
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.LoadUserProfile = $true
     $psi.UseShellExecute = $false
@@ -360,6 +361,8 @@ function Remove-ScheduledTask {
     throw $_
   }
 
+  log "[Remove-ScheduledTask] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+
   $xml = [xml]$arg.xml
   $unRegisterXmlFile = [System.IO.Path]::Combine($app.spyrunBase, "task", "unregister", ($xml.Task.RegistrationInfo.URI -replace "^\\spyrun\\", "") + ".xml")
 
@@ -400,6 +403,7 @@ function Remove-ScheduledTask {
       option: コマンドオプション
       type: "file" or "directory"
       async: $true: 非同期 / $false: 同期 (Default: $false)
+      fileName: sync 実行ファイル名 (Default: $($app.cmdName)_$((New-Guid).Guid).json)
       remove: 同期完了後、 src を削除するかどうか。削除は spyrun.exe 側で実施される。
               $true: 削除 / $false: 削除しない (Defalut: $false)
   .OUTPUTS
@@ -415,7 +419,12 @@ function Sync-FS {
     throw $_
   }
 
-  $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "sync", "$($app.cmdName)_$((New-Guid).Guid).json")
+  log "[Sync-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+
+  $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "sync", "$($app.cmdName)_$((New-Guid).Guid).json")
+  if (![string]::IsNullOrEmpty($arg.fileName)) {
+    $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "sync", "$($arg.fileName).json")
+  }
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $syncFile
 
   if ($arg.async) {
@@ -461,7 +470,9 @@ function Remove-FS {
     throw $_
   }
 
-  $removeFile = [System.IO.Path]::Combine($app.spyrunBase, "remove", "$($app.cmdName)_$((New-Guid).Guid).json")
+  log "[Remove-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+
+  $removeFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "remove", "$($app.cmdName)_$((New-Guid).Guid).json")
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $removeFile
 
   if ($arg.async) {
@@ -476,7 +487,61 @@ function Remove-FS {
       return 1
     }
     if (Test-Path $removeFile) {
-      log "Remove is not ended ! so wait ... [${removeFile}]"
+      log "[Remove-FS] Remove is not ended ! so wait ... [${removeFile}]"
+      Start-Sleep -Seconds 1
+    } else {
+      break
+    }
+  }
+  return 0
+}
+
+<#
+  .SYNOPSIS
+    Exec-FS
+  .DESCRIPTION
+    spyrun の exec タスクを利用してファイルを実行する
+  .INPUTS
+    - arg: 実行情報 (PSCustomObject)
+      cmd: 実行ファイルパス
+      arg: 引数
+      dir: 実行ディレクトリ
+      async: $true: 非同期 / $false: 同期 (Default: $false)
+      fileName: exec 実行ファイル名 (Default: $($app.cmdName)_$((New-Guid).Guid).json
+  .OUTPUTS
+    - result: 0 (成功) / not 0 (失敗)
+#>
+function Exec-FS {
+  [CmdletBinding()]
+  [OutputType([int])]
+  param([PSCustomObject]$arg)
+
+  trap {
+    log "[Exec-FS] Error $_" "Red"
+    throw $_
+  }
+
+  log "[Exec-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+
+  $execFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "exec", "$($app.cmdName)_$((New-Guid).Guid).json")
+  if (![string]::IsNullOrEmpty($arg.fileName)) {
+    $execFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "exec", "$($arg.fileName).json")
+  }
+  $arg | ConvertTo-Json | Set-Content -Encoding utf8 $execFile
+
+  if ($arg.async) {
+    return 0
+  }
+
+  $limitTime = (Get-Date).AddMinutes(10)
+
+  while ($true) {
+    if ((Get-Date) -gt $limitTime) {
+      log "[Exec-FS] Time over !!!" "Red"
+      return 1
+    }
+    if (Test-Path $execFile) {
+      log "[Exec-FS] Exec is not ended ! so wait ... [${execFile}]"
       Start-Sleep -Seconds 1
     } else {
       break
@@ -507,6 +572,8 @@ function Exit-Task {
     log "[Exit-Task] Error $_" "Red"
     throw $_
   }
+
+  log "[Exit-Task] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
 
   log "[Exit-Task] Create result file."
   $resultPath = [System.IO.Path]::Combine($app.resultDirRemote, "${env:COMPUTERNAME}_$($app.logName)_$($arg.result).log")
@@ -571,6 +638,7 @@ function Check-ModifiedCmd {
   }
 
   log "[Check-ModifiedCmd] start"
+  log "[Check-ModifiedCmd] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
   $localHashBefore = (Get-FileHash $app.cmdFile).Hash
   log "[Check-ModifiedCmd] sync cmd"
   $result = & {
@@ -748,6 +816,8 @@ function New-DelFile {
   [OutputType([int])]
   param([PSCustomObject]$arg)
 
+  log "[New-DelFile] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+
   $guid = (New-Guid).Guid
   $localDelFile = [System.IO.Path]::Combine($app.delLocal, "${env:COMPUTERNAME}_$($app.cmdName)_${guid}.json")
   $remoteDelFile = [System.IO.Path]::Combine($app.delRemote, "${env:COMPUTERNAME}_$($app.cmdName)_${guid}.json")
@@ -871,6 +941,7 @@ function Start-Init {
   $app.Add("baseRemote", @($app.baseRemotes)[0])
   $app.Add("datRemote", [System.IO.Path]::Combine($app.baseRemote, "dat"))
   $app.Add("delRemote", [System.IO.Path]::Combine($app.baseRemote, "del"))
+  $app.Add("flgRemote", [System.IO.Path]::Combine($app.baseRemote, "flg"))
   $app.Add("clctRemote", [System.IO.Path]::Combine($app.baseRemote, $app.userType, "clct"))
   $app.Add("resultDirRemote", [System.IO.Path]::Combine($app.baseRemote, $app.userType, "result", $app.scope, $app.cmdName))
   $app.Add("resultPrefixFileRemote", [System.IO.Path]::Combine($app.resultDirRemote, "${env:COMPUTERNAME}_$($app.cmdName)"))
@@ -878,6 +949,7 @@ function Start-Init {
   $app.Add("baseLocal", [System.IO.Path]::Combine($app.spyrunBase))
   $app.Add("datLocal", $app.datRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("delLocal", $app.delRemote.Replace($app.baseRemote, $app.baseLocal))
+  $app.Add("flgLocal", $app.flgRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("clctLocal", $app.clctRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("resultDirLocal", $app.resultDirRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("resultPrefixFileLocal", $app.resultPrefixFileRemote.Replace($app.baseRemote, $app.baseLocal))
@@ -887,7 +959,7 @@ function Start-Init {
   } else {
     $app.Add("logDir", [System.IO.Path]::Combine($app.baseLocal, $app.userType, "log", $app.scope, $app.cmdName))
   }
-  $app.Add("logFile", [System.IO.Path]::Combine($app.logDir, "$($app.cmdName)_$($app.now).log"))
+  $app.Add("logFile", [System.IO.Path]::Combine($app.logDir, "$($app.cmdName)_$($app.mode)_$($app.now).log"))
   $app.Add("logName", [System.IO.Path]::GetFileNameWithoutExtension($app.logFile))
   $app.Add("logFileName", [System.IO.Path]::GetFileName($app.logFile))
   New-Item -Force -ItemType Directory $app.logDir | Out-Null

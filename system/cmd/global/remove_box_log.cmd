@@ -3,21 +3,84 @@
 
 <#
   .SYNOPSIS
-    startup
+    remove_box_log
   .DESCRIPTION
-    サインイン時にいろいろ実行する
+    Box のログを削除する
   .INPUTS
     - mode: "register": タスク登録, "main": 処理実行
-    - async: "true": 非同期実行, "false": 同期実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2024/11/12 00:58:23.
+  .Last Change: 2025/02/22 16:20:40.
 #>
-param([string]$mode = "register", [bool]$async = $false)
+param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20241112_005823"
+$version = "20250222_162040"
 # Enable-RunspaceDebug -BreakAll
+
+<#
+  .SYNOPSIS
+    Gets the file size in a human-readable format (KB, MB, GB).
+
+  .DESCRIPTION
+    This function takes a file path as input and returns the file size in the most appropriate unit (bytes, KB, MB, or GB), rounded to two decimal places.
+    It handles errors if the file is not found.
+
+  .PARAMETER Path
+    The path to the file.
+
+  .EXAMPLE
+    Get-HumanReadableFileSize -Path "C:\path\to\your\file.txt"
+
+  .EXAMPLE
+    $size = Get-HumanReadableFileSize -Path "C:\temp\largefile.dat"
+    Write-Host "File size: $size"
+#>
+function Get-HumanReadableFileSize {
+  param([string]$path)
+  $file = Get-ChildItem -Path $path
+  $sizeInBytes = $file.Length
+  if ($sizeInBytes -lt 1KB) {
+    return "$($sizeInBytes) bytes"
+  } elseif ($sizeInBytes -lt 1MB) {
+    return "${[math]::Round(($sizeInBytes / 1KB), 2)} KB"
+  } elseif ($sizeInBytes -lt 1GB) {
+    return "${[math]::Round(($sizeInBytes / 1MB), 2)} MB"
+  } else {
+    return "${[math]::Round(($sizeInBytes / 1GB), 2)} GB"
+  }
+}
+
+<#
+  .SYNOPSIS
+    Remove-OldFiles
+  .DESCRIPTION
+    古いファイルを削除する
+  .INPUTS
+    - path: 削除対象パス
+    - thresold: 閾値 (日)
+  .OUTPUTS
+    - None
+#>
+function Remove-OldFiles {
+  [CmdletBinding()]
+  [OutputType([void])]
+  param([string]$path, [int]$thresold)
+
+  Get-ChildItem -Force -Recurse -File "${path}" | Where-Object {
+    $_.LastWriteTime -lt (Get-Date).AddDays($thresold)
+  } | ForEach-Object {
+    $sizeHr = Get-HumanReadableFileSize $_.FullName
+    log "Remove: $($_.FullName), size: ${sizeHr}"
+    Remove-Item -Force $_.FullName
+  }
+
+  Get-ChildItem -Force -Recurse -Directory "${path}" | Where-Object {
+    (Get-ChildItem -Force $_.FullName | Measure-Object).Count -eq 0
+  } | ForEach-Object {
+    Remove-Item -Force -Recurse $_.FullName
+  }
+}
 
 <#
   .SYNOPSIS
@@ -35,7 +98,7 @@ function Start-Main {
   param()
 
   try {
-
+    $startTime = Get-Date
     . "C:\ProgramData\spyrun\core\cfg\common.ps1"
 
     $app = [PSCustomObject](Start-Init $mode $version)
@@ -48,21 +111,27 @@ function Start-Main {
     <URI>\spyrun\$($app.userType)\$($app.scope)\$($app.cmdName)</URI>
   </RegistrationInfo>
   <Triggers>
-    <LogonTrigger>
+    <TimeTrigger>
+      <Repetition>
+        <Interval>PT1H</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2023-10-01T00:00:00+09:00</StartBoundary>
       <Enabled>true</Enabled>
-    </LogonTrigger>
+      <RandomDelay>PT1H</RandomDelay>
+    </TimeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <GroupId>S-1-5-32-545</GroupId>
-      <RunLevel>LeastPrivilege</RunLevel>
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
     </Principal>
   </Principals>
   <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>true</AllowHardTerminate>
+    <AllowHardTerminate>false</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
     <IdleSettings>
@@ -76,7 +145,7 @@ function Start-Main {
     <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <WakeToRun>true</WakeToRun>
-    <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <Priority>7</Priority>
     <RestartOnFailure>
       <Interval>PT1M</Interval>
@@ -85,8 +154,8 @@ function Start-Main {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>C:\Windows\system32\wscript.exe</Command>
-      <Arguments>"$($app.spyrunBase)\core\cfg\launch.js" "$($app.cmdFile)" main</Arguments>
+      <Command>$($app.cmdFile)</Command>
+      <Arguments>main</Arguments>
       <WorkingDirectory>$($app.cmdDir)</WorkingDirectory>
     </Exec>
   </Actions>
@@ -105,28 +174,12 @@ function Start-Main {
     }
 
     # Execute main.
-    log "========== Start AutoHotkey ! =========="
-    $cmd = [System.IO.Path]::Combine($env:LOCALAPPDATA, "Programs\AutoHotkey\UX\AutoHotkeyUX.exe")
-    $arg = [System.IO.Path]::Combine($env:USERPROFILE, ".dotfiles\win\AutoHotkey\AutoHotkey.ahk")
-    $dir = Split-Path -Parent $arg
-    $ret = Execute-Process ([PSCustomObject]@{ cmd =  $cmd; arg = $arg; dir = $dir; wait = $false })
-    log "code: $($ret.code)"
-    log "stdout: $($ret.stdout)"
-    log "stderr: $($ret.stderr)"
-    log "========== Start clnch ! =========="
-    $cmd = [System.IO.Path]::Combine($env:USERPROFILE, "app\clnch\clnch.exe")
-    $dir = Split-Path -Parent $cmd
-    $ret = Execute-Process ([PSCustomObject]@{ cmd =  $cmd; dir = $dir; wait = $false })
-    log "code: $($ret.code)"
-    log "stdout: $($ret.stdout)"
-    log "stderr: $($ret.stderr)"
-    log "========== Start espanso ! =========="
-    $cmd = [System.IO.Path]::Combine($env:LOCALAPPDATA, "Programs\Espanso\espansod.exe")
-    $arg = "launcher"
-    $ret = Execute-Process ([PSCustomObject]@{ cmd =  $cmd; arg = $arg; wait = $false })
-    log "code: $($ret.code)"
-    log "stdout: $($ret.stdout)"
-    log "stderr: $($ret.stderr)"
+    $thresold = 1
+    # move log files.
+    $boxLogPath = [System.IO.Path]::Combine($env:LOCALAPPDATA, "Box\Box\logs")
+    if (Test-Path $boxLogPath) {
+      Remove-OldFiles $boxLogPath $thresold
+    }
 
     return $app.cnst.SUCCESS
 
@@ -141,6 +194,9 @@ function Start-Main {
       $app.mutex.Close()
       $app.mutex.Dispose()
     }
+    $endTime = Get-Date
+    $span = $endTime - $startTime
+    log ("Elapsed time: {0} {1:00}:{2:00}:{3:00}.{4:000}" -f $span.Days, $span.Hours, $span.Minutes, $span.Seconds, $span.Milliseconds)
     log "[Start-Main] End"
     Stop-Transcript
   }

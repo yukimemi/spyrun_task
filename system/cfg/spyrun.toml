@@ -1,13 +1,14 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2024/11/10 17:26:50.
+# Last Change : 2025/04/06 21:36:12.
 # =============================================================================
 
 [vars]
 base_local = '{{ cfg_dir }}\..'
+ng_local_dir = '{{ base_local }}\ng'
 hostname = '{{ env(arg="COMPUTERNAME") }}'
-version = '20241110_172650'
+version = '20250406_213612'
 
 funcs = '''
 function log {
@@ -15,6 +16,17 @@ function log {
   trap { Write-Host "[log] Error $_" }
   $now = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
   Write-Host "${now} ${msg}"
+}
+'''
+
+z_funcs = '''
+function move_to_ng {
+  param([string]$src)
+  $base = Resolve-Path '{{ base_local }}'
+  $dst = $src.Replace("/", "\").Replace($base, '{{ ng_local_dir }}')
+  log "${src} -> ${dst}"
+  New-Item -Force -ItemType Directory (Split-Path -Parent $dst) | Out-Null
+  Move-Item -Force $src $dst
 }
 '''
 
@@ -53,11 +65,22 @@ level = 'info'
 
 [init]
 cmd = 'powershell'
-arg = ['-NoProfile', '-Command', '''& {
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
   {{ funcs }}
   {{ trap_stop_force }}
   log "{{ version }}"
-}''']
+  New-Item -Force -ItemType Directory "{{ base_local }}\ng" | Out-Null
+  New-Item -Force -ItemType Directory "{{ base_local }}\if\sync" | Out-Null
+  New-Item -Force -ItemType Directory "{{ base_local }}\if\sync_result" | Out-Null
+  New-Item -Force -ItemType Directory "{{ base_local }}\if\remove" | Out-Null
+  New-Item -Force -ItemType Directory "{{ base_local }}\if\remove_result" | Out-Null
+  New-Item -Force -ItemType Directory "{{ base_local }}\if\exec" | Out-Null
+  New-Item -Force -ItemType Directory "{{ base_local }}\if\exec_result" | Out-Null
+}''',
+]
 
 # Update cfg toml when there is a change.
 [[spys]]
@@ -66,7 +89,7 @@ input = '{{ cfg_dir }}'
 output = '{{ log_dir }}\{{ spy_name }}\{{ event_stem }}'
 debounce = 5000
 [[spys.patterns]]
-pattern = '\.toml$'
+pattern = 'spyrun\.toml$'
 cmd = 'powershell'
 arg = ['-NoProfile', '-Command', '''& {
   {{ funcs }}
@@ -96,3 +119,177 @@ interval = 10000
 [spys.walk]
 delay = [0, 60000]
 pattern = '\.cmd$|\.exe$|\.bat$'
+
+# Sync
+[[spys]]
+name = 'sync'
+input = '{{ base_local }}\if\sync'
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 5000
+limitkey = '{{ event_path }}'
+[spys.walk]
+pattern = '\.json$'
+[[spys.patterns]]
+pattern = '\.json$'
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ z_funcs }}
+  $ErrorActionPreference = "Stop"
+  log "spy_name: [{{ spy_name }}]"
+  log "event_path: {{ event_path }}"
+  log "event_kind: {{ event_kind }}"
+  try {
+    $json = Get-Content -Encoding utf8 '{{ event_path }}'
+    log "json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "src: [$($cfg.src)]"
+    log "dst: [$($cfg.dst)]"
+    log "type: [$($cfg.type)]"
+    log "option: [$($cfg.option)]"
+    log "remove: [$($cfg.remove)]"
+    $result = 0
+    if (!(Test-Path $cfg.src)) {
+      throw "$($cfg.src) is not found !"
+    }
+    if ($cfg.type -eq "directory") {
+      Invoke-Expression "& robocopy $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+      $result = $LASTEXITCODE
+      if ($result -ge 8) {
+        throw "robocopy error !"
+      }
+    } elseif ($cfg.type -eq "file") {
+      New-Item -Force -ItemType Directory (Split-Path -Parent $cfg.dst) | Out-Null
+      Invoke-Expression "Copy-Item $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+    } else {
+      throw "Error `type` must be `file` or `directory` (type: $($cfg.type))"
+    }
+    Get-ChildItem -Force -Recurse -File $cfg.dst | ForEach-Object {
+      Unblock-File $_.FullName
+    }
+    if ($cfg.remove) {
+      log "Remove flg on, so remove [$($cfg.src)] !"
+      Remove-Item -Force -Recurse $cfg.src
+    }
+    Remove-Item -Force '{{ event_path }}'
+    $result = 0
+  } catch {
+    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
+    log "{{ spy_name }} Error ! $_"
+    move_to_ng '{{ event_path }}'
+  } finally {
+    [PSCustomObject]@{
+      src = "$($cfg.src)"
+      dst = "$($cfg.dst)"
+      type = "$($cfg.type)"
+      option = "$($cfg.option)"
+      remove = "$($cfg.remove)"
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync_result\{{ event_name }}'
+  }
+}''',
+]
+
+# Remove
+[[spys]]
+name = 'remove'
+input = '{{ base_local }}\if\remove'
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 5000
+limitkey = '{{ event_path }}'
+[spys.walk]
+pattern = '\.json$'
+[[spys.patterns]]
+pattern = '\.json$'
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ z_funcs }}
+  $ErrorActionPreference = "Stop"
+  log "spy_name: [{{ spy_name }}]"
+  log "event_path: {{ event_path }}"
+  log "event_kind: {{ event_kind }}"
+  try {
+    $json = Get-Content -Encoding utf8 '{{ event_path }}'
+    log "json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "path: [$($cfg.path)]"
+    $result = 0
+    if (Test-Path $cfg.path) {
+      log "Remove: [$($cfg.path)]"
+      Remove-Item -Force -Recurse $cfg.path
+    } else {
+      log "$($cfg.path) is not found !"
+    }
+    Remove-Item -Force '{{ event_path }}'
+    $result = 0
+  } catch {
+    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
+    log "{{ spy_name }} Error ! $_"
+    move_to_ng '{{ event_path }}'
+  } finally {
+    [PSCustomObject]@{
+      path = "$($cfg.path)"
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\remove_result\{{ event_name }}'
+  }
+}''',
+]
+
+# Exec
+[[spys]]
+name = 'exec'
+input = '{{ base_local }}\if\exec'
+output = '{{ log_dir }}\{{ spy_name }}'
+debounce = 5000
+limitkey = '{{ event_path }}'
+[spys.walk]
+pattern = '\.json$'
+[[spys.patterns]]
+pattern = '\.json$'
+cmd = 'powershell'
+arg = [
+  '-NoProfile',
+  '-Command',
+  '''& {
+  {{ funcs }}
+  {{ z_funcs }}
+  $ErrorActionPreference = "Stop"
+  log "spy_name: [{{ spy_name }}]"
+  log "event_path: {{ event_path }}"
+  log "event_kind: {{ event_kind }}"
+  try {
+    $json = Get-Content -Encoding utf8 '{{ event_path }}'
+    log "json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "cmd: [$($cfg.cmd)]"
+    log "arg: [$($cfg.arg)]"
+    log "dir: [$($cfg.dir)]"
+    $result = 0
+    . '{{ base_local }}\..\core\cfg\common.ps1'
+    $ret = Execute-Process ([PSCustomObject]@{ cmd = $cfg.cmd; arg = $cfg.arg -join " "; dir = $cfg.dir })
+    log "code: [$($ret.code)]"
+    log "stdout: [$($ret.stdout)]"
+    log "stderr: [$($ret.stderr)]"
+    Remove-Item -Force '{{ event_path }}'
+    $result = $ret.code
+  } catch {
+    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
+    log "{{ spy_name }} Error ! $_"
+    move_to_ng '{{ event_path }}'
+  } finally {
+    [PSCustomObject]@{
+      cmd = "$($cfg.cmd)"
+      arg = "$($cfg.arg)"
+      dir = "$($cfg.dir)"
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\exec_result\{{ event_name }}'
+  }
+}''',
+]
