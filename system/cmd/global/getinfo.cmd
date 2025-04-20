@@ -10,12 +10,12 @@
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/04/14 00:08:27.
+  .Last Change: 2025/04/20 22:42:49.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20250414_000827"
+$version = "20250420_224249"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -241,7 +241,7 @@ function Start-Main {
         csvName =  "sign"
       })
 
-    Get-ChildItem -Force -Recurse -File $app.clctLocal | ForEach-Object {
+    Get-ChildItem -Force -Recurse -File $collect | ForEach-Object {
       $src = $_.FullName
       $dst = $src.Replace($app.clctLocal, $app.clctRemote)
       Sync-FS ([PSCustomObject]@{

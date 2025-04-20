@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/04/06 09:02:03.
+  .Last Change: 2025/04/20 23:00:21.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -420,15 +420,18 @@ function Sync-FS {
   }
 
   log "[Sync-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $result = -1
 
   $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "sync", "$($app.cmdName)_$((New-Guid).Guid).json")
   if (![string]::IsNullOrEmpty($arg.fileName)) {
     $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "sync", "$($arg.fileName).json")
   }
+  $syncFileResult = $syncFile.Replace("$($app.spyrunBase)\if\sync", "$($app.spyrunBase)\if\sync_result")
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $syncFile
 
   if ($arg.async) {
-    return 0
+    $result = 0
+    return $result
   }
 
   $limitTime = (Get-Date).AddMinutes(10)
@@ -436,16 +439,18 @@ function Sync-FS {
   while ($true) {
     if ((Get-Date) -gt $limitTime) {
       log "[Sync-FS] Time over !!!" "Red"
-      return 1
+      $result = 1
+      return $result
     }
     if (Test-Path $syncFile) {
       log "Sync is not ended ! so wait ... [${syncFile}]"
       Start-Sleep -Seconds 1
     } else {
+      $result = (Get-Content -Encoding utf8 $syncFileResult | ConvertFrom-Json).result
       break
     }
   }
-  return 0
+  return $result
 }
 
 <#
@@ -471,12 +476,15 @@ function Remove-FS {
   }
 
   log "[Remove-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $result = -1
 
   $removeFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "remove", "$($app.cmdName)_$((New-Guid).Guid).json")
+  $removeFileResult = $removeFile.Replace("$($app.spyrunBase)\if\remove", "$($app.spyrunBase)\if\remove_result")
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $removeFile
 
   if ($arg.async) {
-    return 0
+    $result = 0
+    return $result
   }
 
   $limitTime = (Get-Date).AddMinutes(10)
@@ -484,16 +492,18 @@ function Remove-FS {
   while ($true) {
     if ((Get-Date) -gt $limitTime) {
       log "[Remove-FS] Time over !!!" "Red"
-      return 1
+      $result = 1
+      return $result
     }
     if (Test-Path $removeFile) {
       log "[Remove-FS] Remove is not ended ! so wait ... [${removeFile}]"
       Start-Sleep -Seconds 1
     } else {
+      $result = (Get-Content -Encoding utf8 $syncFileResult | ConvertFrom-Json).result
       break
     }
   }
-  return 0
+  return $result
 }
 
 <#
@@ -522,15 +532,18 @@ function Exec-FS {
   }
 
   log "[Exec-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $result = -1
 
   $execFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "exec", "$($app.cmdName)_$((New-Guid).Guid).json")
   if (![string]::IsNullOrEmpty($arg.fileName)) {
     $execFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "exec", "$($arg.fileName).json")
   }
+  $execFileResult = $execFile.Replace("$($app.spyrunBase)\if\exec", "$($app.spyrunBase)\if\exec_result")
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $execFile
 
   if ($arg.async) {
-    return 0
+    $result = 0
+    return $result
   }
 
   $limitTime = (Get-Date).AddMinutes(10)
@@ -538,16 +551,18 @@ function Exec-FS {
   while ($true) {
     if ((Get-Date) -gt $limitTime) {
       log "[Exec-FS] Time over !!!" "Red"
-      return 1
+      $result = 1
+      return $result
     }
     if (Test-Path $execFile) {
       log "[Exec-FS] Exec is not ended ! so wait ... [${execFile}]"
       Start-Sleep -Seconds 1
     } else {
+      $result = (Get-Content -Encoding utf8 $syncFileResult | ConvertFrom-Json).result
       break
     }
   }
-  return 0
+  return $result
 }
 
 <#
