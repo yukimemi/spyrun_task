@@ -10,12 +10,12 @@
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/04/20 23:19:34.
+  .Last Change: 2025/04/22 00:46:26.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20250420_231934"
+$version = "20250422_004626"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -120,6 +120,45 @@ function Start-Main {
     $swMasterCfgLocal = $swMasterCfgRemote.Replace($app.datRemote, $app.datLocal)
     $swTermCfgLocal = $swTermCfgRemote.Replace($app.datRemote, $app.datLocal)
     $swLocalCfgLocal = $swLocalCfgRemote.Replace($app.datRemote, $app.datLocal)
+    $flg = [System.IO.Path]::Combine($app.flgLocal, "$($app.cmdName).flg")
+
+    if (!(Test-Path $flg)) {
+      $s = @"
+@set __SCRIPTPATH=%~f0&@powershell -NoProfile -ExecutionPolicy ByPass -InputFormat None "`$s=[scriptblock]::create((gc -enc utf8 -li \"%~f0\"|?{`$_.readcount -gt 2})-join\"``n\");&`$s" %*
+@exit /b %errorlevel%
+
+`$ErrorActionPreference = "Stop"
+trap { log `$_ "Red"; throw `$_ }
+function log { ${Function:log} }
+
+if (!(Test-Path "${swMasterCfgRemote}")) {
+  New-Item -Force -ItemType Directory (Split-Path -Parent "${swMasterCfgRemote}") | Out-Null
+  "[]" | Set-Content -Encoding utf8 "${swMasterCfgRemote}"
+}
+if (!(Test-Path "${swTermCfgRemote}")) {
+  New-Item -Force -ItemType Directory (Split-Path -Parent "${swTermCfgRemote}") | Out-Null
+  "[]" | Set-Content -Encoding utf8 "${swTermCfgRemote}"
+}
+if (!(Test-Path "${swLocalCfgRemote}")) {
+  New-Item -Force -ItemType Directory (Split-Path -Parent "${swLocalCfgRemote}") | Out-Null
+  "[]" | Set-Content -Encoding utf8 "${swLocalCfgRemote}"
+}
+
+New-Item -Force -ItemType Directory (Split-Path -Parent "${flg}") | Out-Null
+Get-Date | Set-Content -Encoding utf8 "${flg}"
+
+Remove-Item -Force ([System.IO.Path]::GetFullPath(`$env:__SCRIPTPATH))
+"@
+
+      $scriptPath = "${env:tmp}\$($app.cmdName).cmd"
+      [System.IO.File]::WriteAllText($scriptPath, $s)
+      Sync-FS ([PSCustomObject]@{
+          src = $scriptPath
+          dst = [System.IO.Path]::Combine($app.baseRemote, "core", "cmd", "local", $env:COMPUTERNAME, $app.cmdFileName)
+          type = "file"
+        })
+      return $app.cnst.SUCCESS
+    }
 
     $resultSyncMaster = Sync-FS ([PSCustomObject]@{
         src = $swMasterCfgRemote
@@ -167,7 +206,10 @@ function Start-Main {
     } | Set-Variable sws
 
     [PSCustomObject]@{
-      resultDate = $resultDate
+      time = [PSCustomObject]@{
+        in = $startTime.ToString("yyyy/MM/dd HH:mm:ss.fff")
+        out = $resultDate
+      }
       sws = @($sws)
     } | ConvertTo-Json | Set-Content -Encoding utf8 $collectJsonLatest
     Copy-Item -Force $collectJsonLatest $collectJsonToday
