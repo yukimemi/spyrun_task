@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/04/20 23:00:21.
+  .Last Change: 2025/04/27 10:36:45.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -420,6 +420,7 @@ function Sync-FS {
   }
 
   log "[Sync-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
   $result = -1
 
   $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "sync", "$($app.cmdName)_$((New-Guid).Guid).json")
@@ -476,6 +477,7 @@ function Remove-FS {
   }
 
   log "[Remove-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
   $result = -1
 
   $removeFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "remove", "$($app.cmdName)_$((New-Guid).Guid).json")
@@ -532,6 +534,7 @@ function Exec-FS {
   }
 
   log "[Exec-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
   $result = -1
 
   $execFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "exec", "$($app.cmdName)_$((New-Guid).Guid).json")

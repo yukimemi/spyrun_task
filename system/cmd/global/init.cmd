@@ -10,12 +10,12 @@
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/03/26 01:13:13.
+  .Last Change: 2025/04/27 18:16:39.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20250326_011313"
+$version = "20250427_181639"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -120,6 +120,13 @@ function Start-Main {
     # core/cmd/local
     $initSrc = [System.IO.Path]::Combine($app.datRemote, "init", $env:COMPUTERNAME.Substring(0, 4), "core", "cmd", "local")
     $initDst = [System.IO.Path]::Combine($app.baseRemote, "core", "cmd", "local", $env:COMPUTERNAME)
+    New-Item -Force -ItemType Directory $initDst | Out-Null
+    Sync-FS ([PSCustomObject]@{
+        src = $initDst
+        dst = $initSrc
+        type = "directory"
+        option = "/e /xf *.*"
+      })
 
     log "[${initSrc}] -> [${initDst}] is start ..."
     $result = Sync-FS ([PSCustomObject]@{
@@ -138,6 +145,13 @@ function Start-Main {
     # system/cmd/local
     $initSrc = [System.IO.Path]::Combine($app.datRemote, "init", $env:COMPUTERNAME.Substring(0, 4), "system", "cmd", "local")
     $initDst = [System.IO.Path]::Combine($app.baseRemote, "system", "cmd", "local", $env:COMPUTERNAME)
+    New-Item -Force -ItemType Directory $initDst | Out-Null
+    Sync-FS ([PSCustomObject]@{
+        src = $initDst
+        dst = $initSrc
+        type = "directory"
+        option = "/e /xf *.*"
+      })
 
     log "[${initSrc}] -> [${initDst}] is start ..."
     $result = Sync-FS ([PSCustomObject]@{
@@ -156,6 +170,13 @@ function Start-Main {
     # user/cmd/local
     $initSrc = [System.IO.Path]::Combine($app.datRemote, "init", $env:COMPUTERNAME.Substring(0, 4), "user", "cmd", "local")
     $initDst = [System.IO.Path]::Combine($app.baseRemote, "user", "cmd", "local", $env:COMPUTERNAME)
+    New-Item -Force -ItemType Directory $initDst | Out-Null
+    Sync-FS ([PSCustomObject]@{
+        src = $initDst
+        dst = $initSrc
+        type = "directory"
+        option = "/e /xf *.*"
+      })
 
     log "[${initSrc}] -> [${initDst}] is start ..."
     $result = Sync-FS ([PSCustomObject]@{

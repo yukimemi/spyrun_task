@@ -1,11 +1,11 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2025/03/30 14:48:19.
+# Last Change : 2025/04/27 19:44:45.
 # =============================================================================
 
 [vars]
-version = '20250330_144819'
+version = '20250427_194445'
 
 base_local = '{{ cmd_dir }}\..'
 base_local_core = '{{ base_local }}\core'
@@ -66,24 +66,24 @@ function log {
 
 z_funcs = '''
 function sync_cfg {
-  & robocopy /mir /r:3 /w:3 "{{ cfg_remote_dir_core }}" "{{ cfg_local_dir_core }}"
-  & robocopy /mir /r:3 /w:3 "{{ cfg_remote_dir_system }}" "{{ cfg_local_dir_system }}"
-  & robocopy /mir /r:3 /w:3 "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }}"
+  & robocopy "{{ cfg_remote_dir_core }}" "{{ cfg_local_dir_core }} /mir /r:3 /w:3"
+  & robocopy "{{ cfg_remote_dir_system }}" "{{ cfg_local_dir_system }} /mir /r:3 /w:3"
+  & robocopy "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }} /mir /r:3 /w:3"
 }
 function sync_cmd {
-  & robocopy /mir /r:3 /w:3 "{{ base_remote_system }}\cmd\global" "{{ base_local_system }}\cmd\global"
-  & robocopy /mir /r:3 /w:3 "{{ base_remote_system }}\cmd\local\{{ hostname }}" "{{ base_local_system }}\cmd\local\{{ hostname }}"
-  & robocopy /mir /r:3 /w:3 "{{ base_remote_user }}\cmd\global" "{{ base_local_user }}\cmd\global"
-  & robocopy /mir /r:3 /w:3 "{{ base_remote_user }}\cmd\local\{{ hostname }}" "{{ base_local_user }}\cmd\local\{{ hostname }}"
+  & robocopy "{{ base_remote_system }}\cmd\global" "{{ base_local_system }}\cmd\global /mir /r:3 /w:3"
+  & robocopy "{{ base_remote_system }}\cmd\local\{{ hostname }}" "{{ base_local_system }}\cmd\local\{{ hostname }} /mir /r:3 /w:3"
+  & robocopy "{{ base_remote_user }}\cmd\global" "{{ base_local_user }}\cmd\global /mir /r:3 /w:3"
+  & robocopy "{{ base_remote_user }}\cmd\local\{{ hostname }}" "{{ base_local_user }}\cmd\local\{{ hostname }} /mir /r:3 /w:3"
 }
 function sync_log {
-  & robocopy /s /mov /minage:1 /r:1 /w:1 /xx "{{ log_dir }}" "{{ log_remote_dir }}"
-  & robocopy /s /mov /minage:1 /r:1 /w:1 /xx "{{ log_local_dir_core }}" "{{ log_remote_dir_core }}"
-  & robocopy /s /mov /minage:1 /r:1 /w:1 /xx "{{ log_local_dir_system }}" "{{ log_remote_dir_system }}"
-  & robocopy /s /mov /minage:1 /r:1 /w:1 /xx "{{ log_local_dir_user }}" "{{ log_remote_dir_user }}"
+  & robocopy "{{ log_dir }}" "{{ log_remote_dir }} /s /mov /minage:1 /r:1 /w:1 /xx"
+  & robocopy "{{ log_local_dir_core }}" "{{ log_remote_dir_core }} /s /mov /minage:1 /r:1 /w:1 /xx"
+  & robocopy "{{ log_local_dir_system }}" "{{ log_remote_dir_system }} /s /mov /minage:1 /r:1 /w:1 /xx"
+  & robocopy "{{ log_local_dir_user }}" "{{ log_remote_dir_user }} /s /mov /minage:1 /r:1 /w:1 /xx"
 }
 function sync_ng {
-  & robocopy /s /mov /r:1 /w:1 /xx "{{ ng_local_dir }}" "{{ ng_remote_dir }}"
+  & robocopy "{{ ng_local_dir }}" "{{ ng_remote_dir }} /s /mov /r:1 /w:1 /xx"
 }
 function move_to_ng {
   param([string]$src)
@@ -447,6 +447,10 @@ arg = [
   $base_local_system = Resolve-Path '{{ base_local_system }}'
   $base_remote_system = Resolve-Path '{{ base_remote_system }}'
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     path = '{{ event_path }}'.Replace("/", "\").Replace($base_local_system, $base_remote_system)
   } | ConvertTo-Json | Set-Content -Encoding utf8 "{{ base_local }}\remove\{{ spy_name }}_{{ event_stem }}_$((New-Guid).Guid).json"
 }''',
@@ -471,6 +475,10 @@ arg = [
   $base_local_user = Resolve-Path '{{ base_local_user }}'
   $base_remote_user = Resolve-Path '{{ base_remote_user }}'
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     path = '{{ event_path }}'.Replace("/", "\").Replace($base_local_user, $base_remote_user)
   } | ConvertTo-Json | Set-Content -Encoding utf8 "{{ base_local }}\remove\{{ spy_name }}_{{ event_stem }}_$((New-Guid).Guid).json"
 }''',
@@ -498,7 +506,6 @@ arg = [
   log "spy_name: [{{ spy_name }}]"
   log "event_path: {{ event_path }}"
   log "event_kind: {{ event_kind }}"
-  log "limitkey: {{ limitkey }}"
   try {
     $json = Get-Content -Encoding utf8 '{{ event_path }}'
     log "json: ${json}"
@@ -513,7 +520,7 @@ arg = [
       throw "$($cfg.src) is not found !"
     }
     if ($cfg.type -eq "directory") {
-      Invoke-Expression "& robocopy $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+      Invoke-Expression "& robocopy `"$($cfg.src)`" `"$($cfg.dst)`" $($cfg.option)"
       $result = $LASTEXITCODE
       if ($result -ge 8) {
         throw "robocopy error !"
@@ -539,11 +546,15 @@ arg = [
     move_to_ng '{{ event_path }}'
   } finally {
     [PSCustomObject]@{
-      src = "$($cfg.src)"
-      dst = "$($cfg.dst)"
-      type = "$($cfg.type)"
-      option = "$($cfg.option)"
-      remove = "$($cfg.remove)"
+      time = [PSCustomObject]@{
+        in = $cfg.time.in
+        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      }
+      src = $cfg.src
+      dst = $cfg.dst
+      type = $cfg.type
+      option = $cfg.option
+      remove = $cfg.remove
       result = $result
     } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync_result\{{ event_name }}'
   }
@@ -592,7 +603,11 @@ arg = [
     move_to_ng '{{ event_path }}'
   } finally {
     [PSCustomObject]@{
-      path = "$($cfg.path)"
+      time = [PSCustomObject]@{
+        in = $cfg.time.in
+        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      }
+      path = $cfg.path
       result = $result
     } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\remove_result\{{ event_name }}'
   }
@@ -642,9 +657,13 @@ arg = [
     move_to_ng '{{ event_path }}'
   } finally {
     [PSCustomObject]@{
-      cmd = "$($cfg.cmd)"
-      arg = "$($cfg.arg)"
-      dir = "$($cfg.dir)"
+      time = [PSCustomObject]@{
+        in = $cfg.time.in
+        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      }
+      cmd = $cfg.cmd
+      arg = $cfg.arg
+      dir = $cfg.dir
       result = $result
     } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\exec_result\{{ event_name }}'
   }
@@ -668,6 +687,10 @@ arg = [
   {{ funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     src = "{{ cfg_remote_dir_core }}"
     dst = "{{ cfg_local_dir_core }}"
     type = "directory"
@@ -691,6 +714,10 @@ arg = [
   {{ funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     src = "{{ cfg_remote_dir_system }}"
     dst = "{{ cfg_local_dir_system }}"
     type = "directory"
@@ -714,6 +741,10 @@ arg = [
   {{ funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     src = "{{ cfg_remote_dir_user }}"
     dst = "{{ cfg_local_dir_user }}"
     type = "directory"
@@ -741,6 +772,10 @@ arg = [
   {{ funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     src = "{{ base_remote_system }}\cmd\global"
     dst = "{{ base_local_system }}\cmd\global"
     type = "directory"
@@ -766,6 +801,10 @@ arg = [
   {{ funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     src = "{{ base_remote_system }}\cmd\local\{{ hostname }}"
     dst = "{{ base_local_system }}\cmd\local\{{ hostname }}"
     type = "directory"
@@ -791,6 +830,10 @@ arg = [
   {{ funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     src = "{{ base_remote_user }}\cmd\global"
     dst = "{{ base_local_user }}\cmd\global"
     type = "directory"
@@ -816,6 +859,10 @@ arg = [
   {{ funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     src = "{{ base_remote_user }}\cmd\local\{{ hostname }}"
     dst = "{{ base_local_user }}\cmd\local\{{ hostname }}"
     type = "directory"
@@ -843,6 +890,10 @@ arg = [
   {{ trap_no_stop }}
   Start-Sleep -Seconds 30
   [PSCustomObject]@{
+    time = [PSCustomObject]@{
+      in = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      out = ""
+    }
     src = "{{ ng_local_dir }}"
     dst = "{{ ng_remote_dir }}"
     type = "directory"
