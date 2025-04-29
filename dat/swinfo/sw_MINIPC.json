@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Windows Update",
+    "actualcmd": "$kb = 'KB5055627'; Get-HotFix | ? { $_.InstalledOn -ne '' -and $_.HotFixID -eq $kb } | Select-Object -ExpandProperty HotFixID",
+    "assertcmd": "$actual -eq $expected",
+    "expected": "KB5055627"
+  }
+]

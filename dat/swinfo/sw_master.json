@@ -2,6 +2,7 @@
   {
     "name": "Edge",
     "actualcmd": "(Get-ItemProperty -Path \"HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}\" -Name pv -ErrorAction SilentlyContinue).pv",
+    "assertcmd": "[version]$actual -ge [version]$expected",
     "expected": "135.0.3179.85"
   }
 ]

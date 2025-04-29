@@ -1,0 +1,8 @@
+[
+  {
+    "name": "OS",
+    "actualcmd": "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').DisplayVersion",
+    "assertcmd": "$actual -eq $expected",
+    "expected": "24H2"
+  }
+]

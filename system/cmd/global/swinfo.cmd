@@ -10,12 +10,12 @@
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/04/22 00:46:26.
+  .Last Change: 2025/04/29 21:08:26.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20250422_004626"
+$version = "20250429_210826"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -200,7 +200,13 @@ Remove-Item -Force ([System.IO.Path]::GetFullPath(`$env:__SCRIPTPATH))
       $sws | ForEach-Object {
         $sw = $_
         $actual = Invoke-Expression $sw.actualcmd
+        $expected = $sw.expected
+        $assert = Invoke-Expression $sw.assertcmd
         $sw | Add-Member -MemberType NoteProperty -Name "actual" -Value $actual
+        $sw | Add-Member -MemberType NoteProperty -Name "assert" -Value $assert
+        log "------------------------------"
+        log "sw: $($sw | ConvertTo-Json)"
+        log "------------------------------"
         $sw
       }
     } | Set-Variable sws
