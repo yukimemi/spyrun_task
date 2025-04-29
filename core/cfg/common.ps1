@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/04/27 10:36:45.
+  .Last Change: 2025/04/30 01:14:06.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -406,6 +406,7 @@ function Remove-ScheduledTask {
       fileName: sync 実行ファイル名 (Default: $($app.cmdName)_$((New-Guid).Guid).json)
       remove: 同期完了後、 src を削除するかどうか。削除は spyrun.exe 側で実施される。
               $true: 削除 / $false: 削除しない (Defalut: $false)
+      usertype: "core", "system", "user" (Default: "core")
   .OUTPUTS
     - result: 0 (成功) / not 0 (失敗)
 #>
@@ -423,11 +424,18 @@ function Sync-FS {
   $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
   $result = -1
 
-  $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "sync", "$($app.cmdName)_$((New-Guid).Guid).json")
-  if (![string]::IsNullOrEmpty($arg.fileName)) {
-    $syncFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "sync", "$($arg.fileName).json")
+  $ifBase = & {
+    if (($arg.usertype -eq "system") -or ($arg.usertype -eq "user")) {
+      return [System.IO.Path]::Combine($app.spyrunBase, $app.userType)
+    }
+    return $app.spyrunBase
   }
-  $syncFileResult = $syncFile.Replace("$($app.spyrunBase)\if\sync", "$($app.spyrunBase)\if\sync_result")
+
+  $syncFile = [System.IO.Path]::Combine($ifBase, "if", "sync", "$($app.cmdName)_$((New-Guid).Guid).json")
+  if (![string]::IsNullOrEmpty($arg.fileName)) {
+    $syncFile = [System.IO.Path]::Combine($ifBase, "if", "sync", "$($arg.fileName).json")
+  }
+  $syncFileResult = $syncFile.Replace("${ifBase}\if\sync", "${ifBase}\if\sync_result")
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $syncFile
 
   if ($arg.async) {
@@ -463,6 +471,8 @@ function Sync-FS {
     - arg: 削除情報 (PSCustomObject)
       path: 削除パス
       async: $true: 非同期 / $false: 同期 (Default: $false)
+      fileName: exec 実行ファイル名 (Default: $($app.cmdName)_$((New-Guid).Guid).json
+      usertype: "core", "system", "user" (Default: "core")
   .OUTPUTS
     - result: 0 (成功) / not 0 (失敗)
 #>
@@ -480,8 +490,18 @@ function Remove-FS {
   $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
   $result = -1
 
-  $removeFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "remove", "$($app.cmdName)_$((New-Guid).Guid).json")
-  $removeFileResult = $removeFile.Replace("$($app.spyrunBase)\if\remove", "$($app.spyrunBase)\if\remove_result")
+  $ifBase = & {
+    if (($arg.usertype -eq "system") -or ($arg.usertype -eq "user")) {
+      return [System.IO.Path]::Combine($app.spyrunBase, $app.userType)
+    }
+    return $app.spyrunBase
+  }
+
+  $removeFile = [System.IO.Path]::Combine($ifBase, "if", "remove", "$($app.cmdName)_$((New-Guid).Guid).json")
+  if (![string]::IsNullOrEmpty($arg.fileName)) {
+    $removeFile = [System.IO.Path]::Combine($ifBase, "if", "remove", "$($arg.fileName).json")
+  }
+  $removeFileResult = $removeFile.Replace("${ifBase}\if\remove", "${ifBase}\if\remove_result")
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $removeFile
 
   if ($arg.async) {
@@ -501,7 +521,7 @@ function Remove-FS {
       log "[Remove-FS] Remove is not ended ! so wait ... [${removeFile}]"
       Start-Sleep -Seconds 1
     } else {
-      $result = (Get-Content -Encoding utf8 $syncFileResult | ConvertFrom-Json).result
+      $result = (Get-Content -Encoding utf8 $removeFileResult | ConvertFrom-Json).result
       break
     }
   }
@@ -520,6 +540,7 @@ function Remove-FS {
       dir: 実行ディレクトリ
       async: $true: 非同期 / $false: 同期 (Default: $false)
       fileName: exec 実行ファイル名 (Default: $($app.cmdName)_$((New-Guid).Guid).json
+      usertype: "core", "system", "user" (Default: "core")
   .OUTPUTS
     - result: 0 (成功) / not 0 (失敗)
 #>
@@ -537,11 +558,18 @@ function Exec-FS {
   $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
   $result = -1
 
-  $execFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "exec", "$($app.cmdName)_$((New-Guid).Guid).json")
-  if (![string]::IsNullOrEmpty($arg.fileName)) {
-    $execFile = [System.IO.Path]::Combine($app.spyrunBase, "if", "exec", "$($arg.fileName).json")
+  $ifBase = & {
+    if (($arg.usertype -eq "system") -or ($arg.usertype -eq "user")) {
+      return [System.IO.Path]::Combine($app.spyrunBase, $app.userType)
+    }
+    return $app.spyrunBase
   }
-  $execFileResult = $execFile.Replace("$($app.spyrunBase)\if\exec", "$($app.spyrunBase)\if\exec_result")
+
+  $execFile = [System.IO.Path]::Combine($ifBase, "if", "exec", "$($app.cmdName)_$((New-Guid).Guid).json")
+  if (![string]::IsNullOrEmpty($arg.fileName)) {
+    $execFile = [System.IO.Path]::Combine($ifBase, "if", "exec", "$($arg.fileName).json")
+  }
+  $execFileResult = $execFile.Replace("${ifBase}\if\exec", "${ifBase}\if\exec_result")
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $execFile
 
   if ($arg.async) {
@@ -561,7 +589,7 @@ function Exec-FS {
       log "[Exec-FS] Exec is not ended ! so wait ... [${execFile}]"
       Start-Sleep -Seconds 1
     } else {
-      $result = (Get-Content -Encoding utf8 $syncFileResult | ConvertFrom-Json).result
+      $result = (Get-Content -Encoding utf8 $execFileResult | ConvertFrom-Json).result
       break
     }
   }
@@ -1004,4 +1032,3 @@ function Start-Init {
 
   return $app
 }
-
