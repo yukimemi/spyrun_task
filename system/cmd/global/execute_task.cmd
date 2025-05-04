@@ -10,12 +10,12 @@
     - mode: "register": タスク登録, "main": 処理実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/02/22 16:20:54.
+  .Last Change: 2025/05/03 02:14:08.
 #>
 param([string]$mode = "register")
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20250222_162054"
+$version = "20250503_021408"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -56,9 +56,6 @@ function Start-Main {
       <Enabled>true</Enabled>
       <RandomDelay>PT1H</RandomDelay>
     </TimeTrigger>
-    <BootTrigger>
-      <Enabled>true</Enabled>
-    </BootTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">

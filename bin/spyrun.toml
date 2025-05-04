@@ -1,11 +1,11 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2025/04/27 19:44:45.
+# Last Change : 2025/05/03 16:18:40.
 # =============================================================================
 
 [vars]
-version = '20250427_194445'
+version = '20250503_161840'
 
 base_local = '{{ cmd_dir }}\..'
 base_local_core = '{{ base_local }}\core'
@@ -51,47 +51,42 @@ ng_remote_dir = '{{ base_remote }}\ng\{{ hostname }}'
 stop_force_path_system = '{{ base_local_system }}\stop_force.flg'
 stop_force_path_user = '{{ base_local_user }}\stop_force.flg'
 
+common_ps = '{{ cmd_dir }}\..\core\cfg\common.ps1'
+
 hostname = '{{ env(arg="COMPUTERNAME") }}'
 
 sync_pattern = '\.cmd$|\.toml$|\.exe$|\.ps1$|\.js$|\.bat$|\.json$|\.xml$'
 
-funcs = '''
+z_funcs = '''
+$ErrorActionPreference = "Stop"
 function log {
   param([string]$msg)
   trap { Write-Host "[log] Error $_" }
   $now = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
   Write-Host "${now} ${msg}"
 }
-'''
-
-z_funcs = '''
 function sync_cfg {
-  & robocopy "{{ cfg_remote_dir_core }}" "{{ cfg_local_dir_core }} /mir /r:3 /w:3"
-  & robocopy "{{ cfg_remote_dir_system }}" "{{ cfg_local_dir_system }} /mir /r:3 /w:3"
-  & robocopy "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }} /mir /r:3 /w:3"
+  & robocopy "{{ cfg_remote_dir_core }}" "{{ cfg_local_dir_core }}" /mir /r:3 /w:3
+  & robocopy "{{ cfg_remote_dir_system }}" "{{ cfg_local_dir_system }}" /mir /r:3 /w:3
+  & robocopy "{{ cfg_remote_dir_user }}" "{{ cfg_local_dir_user }}" /mir /r:3 /w:3
 }
 function sync_cmd {
-  & robocopy "{{ base_remote_system }}\cmd\global" "{{ base_local_system }}\cmd\global /mir /r:3 /w:3"
-  & robocopy "{{ base_remote_system }}\cmd\local\{{ hostname }}" "{{ base_local_system }}\cmd\local\{{ hostname }} /mir /r:3 /w:3"
-  & robocopy "{{ base_remote_user }}\cmd\global" "{{ base_local_user }}\cmd\global /mir /r:3 /w:3"
-  & robocopy "{{ base_remote_user }}\cmd\local\{{ hostname }}" "{{ base_local_user }}\cmd\local\{{ hostname }} /mir /r:3 /w:3"
+  & robocopy "{{ base_remote_system }}\cmd\global" "{{ base_local_system }}\cmd\global" /mir /r:3 /w:3
+  & robocopy "{{ base_remote_system }}\cmd\local\{{ hostname }}" "{{ base_local_system }}\cmd\local\{{ hostname }}" /mir /r:3 /w:3
+  & robocopy "{{ base_remote_user }}\cmd\global" "{{ base_local_user }}\cmd\global" /mir /r:3 /w:3
+  & robocopy "{{ base_remote_user }}\cmd\local\{{ hostname }}" "{{ base_local_user }}\cmd\local\{{ hostname }}" /mir /r:3 /w:3
 }
 function sync_log {
-  & robocopy "{{ log_dir }}" "{{ log_remote_dir }} /s /mov /minage:1 /r:1 /w:1 /xx"
-  & robocopy "{{ log_local_dir_core }}" "{{ log_remote_dir_core }} /s /mov /minage:1 /r:1 /w:1 /xx"
-  & robocopy "{{ log_local_dir_system }}" "{{ log_remote_dir_system }} /s /mov /minage:1 /r:1 /w:1 /xx"
-  & robocopy "{{ log_local_dir_user }}" "{{ log_remote_dir_user }} /s /mov /minage:1 /r:1 /w:1 /xx"
+  & robocopy "{{ log_dir }}" "{{ log_remote_dir }}" /s /mov /minage:1 /r:1 /w:1 /xx
+  & robocopy "{{ log_local_dir_core }}" "{{ log_remote_dir_core }}" /s /mov /minage:1 /r:1 /w:1 /xx
+  & robocopy "{{ log_local_dir_system }}" "{{ log_remote_dir_system }}" /s /mov /minage:1 /r:1 /w:1 /xx
+  & robocopy "{{ log_local_dir_user }}" "{{ log_remote_dir_user }}" /s /mov /minage:1 /r:1 /w:1 /xx
 }
 function sync_ng {
-  & robocopy "{{ ng_local_dir }}" "{{ ng_remote_dir }} /s /mov /r:1 /w:1 /xx"
+  & robocopy "{{ ng_local_dir }}" "{{ ng_remote_dir }}" /s /mov /r:1 /w:1 /xx
 }
-function move_to_ng {
-  param([string]$src)
-  $base = Resolve-Path '{{ base_local }}'
-  $dst = $src.Replace("/", "\").Replace($base, '{{ ng_local_dir }}')
-  log "${src} -> ${dst}"
-  New-Item -Force -ItemType Directory (Split-Path -Parent $dst) | Out-Null
-  Move-Item -Force $src $dst
+if (Test-Path '{{ common_ps }}') {
+  . '{{ common_ps }}'
 }
 '''
 
@@ -99,7 +94,6 @@ trap_no_stop = '''
 log "spy_name: [{{ spy_name }}]"
 log "event_path: {{ event_path }}"
 log "event_kind: {{ event_kind }}"
-$ErrorActionPreference = "Stop"
 trap {
   log "{{ spy_name }} Error ! $_"
 }
@@ -109,7 +103,6 @@ trap_stop = '''
 log "spy_name: [{{ spy_name }}]"
 log "event_path: {{ event_path }}"
 log "event_kind: {{ event_kind }}"
-$ErrorActionPreference = "Stop"
 trap {
   log "{{ spy_name }} Error ! $_"
   "spy_name: [{{ spy_name }}] $_" | Set-Content -Encoding utf8 "{{ stop_path }}"
@@ -120,7 +113,6 @@ trap_stop_force = '''
 log "spy_name: [{{ spy_name }}]"
 log "event_path: {{ event_path }}"
 log "event_kind: {{ event_kind }}"
-$ErrorActionPreference = "Stop"
 trap {
   log "{{ spy_name }} Error ! $_"
   "spy_name: [{{ spy_name }}] $_" | Set-Content -Encoding utf8 "{{ stop_force_path }}"
@@ -128,6 +120,7 @@ trap {
 '''
 
 z_init_flg = '{{ base_local }}\flg\init_{{ version }}.flg'
+
 z_init_fn = '''
 {{ z_funcs }}
 $script:stopFlg = $false
@@ -188,8 +181,11 @@ if ($script:stopFlg) {
 if (Test-Path "{{ z_init_flg }}") {
   return
 }
+New-Item -Force -ItemType Directory "{{ base_remote_core }}\cmd\global" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_remote_core }}\cmd\local\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\global" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_remote_system }}\cmd\local\{{ hostname }}" | Out-Null
+New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\global" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_remote_user }}\cmd\local\{{ hostname }}" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\task\register" | Out-Null
 New-Item -Force -ItemType Directory "{{ base_local }}\task\unregister" | Out-Null
@@ -227,7 +223,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_stop_force }}
   log "{{ version }}"
   function Ensure-ScheduledTask {
@@ -281,9 +277,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
   {{ z_funcs }}
-  $ErrorActionPreference = "Stop"
   log "spy_name: [{{ spy_name }}]"
   log "event_path: {{ event_path }}"
   log "event_kind: {{ event_kind }}"
@@ -344,9 +338,7 @@ pattern = '\.xml$'
 pattern = '\.xml$'
 cmd = 'powershell'
 arg = ['-NoProfile', '-Command', '''& {
-  {{ funcs }}
   {{ z_funcs }}
-  $ErrorActionPreference = "Stop"
   log "spy_name: [{{ spy_name }}]"
   log "event_path: {{ event_path }}"
   log "event_kind: {{ event_kind }}"
@@ -421,7 +413,7 @@ limitkey = '{{ spy_name }}'
 pattern = '{{ sync_pattern }}'
 cmd = 'powershell'
 arg = ['-NoProfile', '-Command', '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_stop_force }}
   {{ z_init_fn }}
 }''']
@@ -442,7 +434,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   $base_local_system = Resolve-Path '{{ base_local_system }}'
   $base_remote_system = Resolve-Path '{{ base_remote_system }}'
@@ -470,7 +462,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   $base_local_user = Resolve-Path '{{ base_local_user }}'
   $base_remote_user = Resolve-Path '{{ base_remote_user }}'
@@ -496,70 +488,13 @@ pattern = '\.json$'
 [[spys.patterns]]
 pattern = '\.json$'
 cmd = 'powershell'
-arg = [
-  '-NoProfile',
-  '-Command',
-  '''& {
-  {{ funcs }}
+arg = ['-NoProfile', '-Command', '''& {
   {{ z_funcs }}
-  $ErrorActionPreference = "Stop"
   log "spy_name: [{{ spy_name }}]"
   log "event_path: {{ event_path }}"
   log "event_kind: {{ event_kind }}"
-  try {
-    $json = Get-Content -Encoding utf8 '{{ event_path }}'
-    log "json: ${json}"
-    $cfg = $json | ConvertFrom-Json
-    log "src: [$($cfg.src)]"
-    log "dst: [$($cfg.dst)]"
-    log "type: [$($cfg.type)]"
-    log "option: [$($cfg.option)]"
-    log "remove: [$($cfg.remove)]"
-    $result = 0
-    if (!(Test-Path $cfg.src)) {
-      throw "$($cfg.src) is not found !"
-    }
-    if ($cfg.type -eq "directory") {
-      Invoke-Expression "& robocopy `"$($cfg.src)`" `"$($cfg.dst)`" $($cfg.option)"
-      $result = $LASTEXITCODE
-      if ($result -ge 8) {
-        throw "robocopy error !"
-      }
-    } elseif ($cfg.type -eq "file") {
-      New-Item -Force -ItemType Directory (Split-Path -Parent $cfg.dst) | Out-Null
-      Invoke-Expression "Copy-Item $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
-    } else {
-      throw "Error `type` must be `file` or `directory` (type: $($cfg.type))"
-    }
-    Get-ChildItem -Force -Recurse -File $cfg.dst | ForEach-Object {
-      Unblock-File $_.FullName
-    }
-    if ($cfg.remove) {
-      log "Remove flg on, so remove [$($cfg.src)] !"
-      Remove-Item -Force -Recurse $cfg.src
-    }
-    Remove-Item -Force '{{ event_path }}'
-    $result = 0
-  } catch {
-    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
-    log "{{ spy_name }} Error ! $_"
-    move_to_ng '{{ event_path }}'
-  } finally {
-    [PSCustomObject]@{
-      time = [PSCustomObject]@{
-        in = $cfg.time.in
-        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
-      }
-      src = $cfg.src
-      dst = $cfg.dst
-      type = $cfg.type
-      option = $cfg.option
-      remove = $cfg.remove
-      result = $result
-    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\sync_result\{{ event_name }}'
-  }
-}''',
-]
+  Invoke-Sync ([PSCustomObject]@{ path = '{{ event_path }}' })
+}''']
 
 # Remove
 [[spys]]
@@ -573,46 +508,13 @@ pattern = '\.json$'
 [[spys.patterns]]
 pattern = '\.json$'
 cmd = 'powershell'
-arg = [
-  '-NoProfile',
-  '-Command',
-  '''& {
-  {{ funcs }}
+arg = ['-NoProfile', '-Command', '''& {
   {{ z_funcs }}
-  $ErrorActionPreference = "Stop"
   log "spy_name: [{{ spy_name }}]"
   log "event_path: {{ event_path }}"
   log "event_kind: {{ event_kind }}"
-  try {
-    $json = Get-Content -Encoding utf8 '{{ event_path }}'
-    log "json: ${json}"
-    $cfg = $json | ConvertFrom-Json
-    log "path: [$($cfg.path)]"
-    $result = 0
-    if (Test-Path $cfg.path) {
-      log "Remove: [$($cfg.path)]"
-      Remove-Item -Force -Recurse $cfg.path
-    } else {
-      log "$($cfg.path) is not found !"
-    }
-    Remove-Item -Force '{{ event_path }}'
-    $result = 0
-  } catch {
-    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
-    log "{{ spy_name }} Error ! $_"
-    move_to_ng '{{ event_path }}'
-  } finally {
-    [PSCustomObject]@{
-      time = [PSCustomObject]@{
-        in = $cfg.time.in
-        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
-      }
-      path = $cfg.path
-      result = $result
-    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\remove_result\{{ event_name }}'
-  }
-}''',
-]
+  Invoke-Remove ([PSCustomObject]@{ path = '{{ event_path }}' })
+}''']
 
 # Exec
 [[spys]]
@@ -626,49 +528,13 @@ pattern = '\.json$'
 [[spys.patterns]]
 pattern = '\.json$'
 cmd = 'powershell'
-arg = [
-  '-NoProfile',
-  '-Command',
-  '''& {
-  {{ funcs }}
+arg = ['-NoProfile', '-Command', '''& {
   {{ z_funcs }}
-  $ErrorActionPreference = "Stop"
   log "spy_name: [{{ spy_name }}]"
   log "event_path: {{ event_path }}"
   log "event_kind: {{ event_kind }}"
-  try {
-    $json = Get-Content -Encoding utf8 '{{ event_path }}'
-    log "json: ${json}"
-    $cfg = $json | ConvertFrom-Json
-    log "cmd: [$($cfg.cmd)]"
-    log "arg: [$($cfg.arg)]"
-    log "dir: [$($cfg.dir)]"
-    $result = 0
-    . '{{ base_local }}\core\cfg\common.ps1'
-    $ret = Execute-Process ([PSCustomObject]@{ cmd = $cfg.cmd; arg = $cfg.arg -join " "; dir = $cfg.dir })
-    log "code: [$($ret.code)]"
-    log "stdout: [$($ret.stdout)]"
-    log "stderr: [$($ret.stderr)]"
-    Remove-Item -Force '{{ event_path }}'
-    $result = $ret.code
-  } catch {
-    if (($null -eq $result) -or ($result -eq 0)) { $result = 1 }
-    log "{{ spy_name }} Error ! $_"
-    move_to_ng '{{ event_path }}'
-  } finally {
-    [PSCustomObject]@{
-      time = [PSCustomObject]@{
-        in = $cfg.time.in
-        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
-      }
-      cmd = $cfg.cmd
-      arg = $cfg.arg
-      dir = $cfg.dir
-      result = $result
-    } | ConvertTo-Json | Set-Content -Encoding utf8 '{{ base_local }}\if\exec_result\{{ event_name }}'
-  }
-}''',
-]
+  Invoke-Exec ([PSCustomObject]@{ path = '{{ event_path }}' })
+}''']
 
 # Sync cfg
 [[spys]]
@@ -684,7 +550,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
     time = [PSCustomObject]@{
@@ -711,7 +577,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
     time = [PSCustomObject]@{
@@ -738,7 +604,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
     time = [PSCustomObject]@{
@@ -769,7 +635,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
     time = [PSCustomObject]@{
@@ -798,7 +664,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
     time = [PSCustomObject]@{
@@ -827,7 +693,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
     time = [PSCustomObject]@{
@@ -856,7 +722,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   [PSCustomObject]@{
     time = [PSCustomObject]@{
@@ -886,7 +752,7 @@ arg = [
   '-NoProfile',
   '-Command',
   '''& {
-  {{ funcs }}
+  {{ z_funcs }}
   {{ trap_no_stop }}
   Start-Sleep -Seconds 30
   [PSCustomObject]@{

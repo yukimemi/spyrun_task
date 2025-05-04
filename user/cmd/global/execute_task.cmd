@@ -11,12 +11,12 @@
     - async: "true": 非同期実行, "false": 同期実行
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/03/20 19:18:06.
+  .Last Change: 2025/05/03 02:15:55.
 #>
 param([string]$mode = "register", [bool]$async = $false)
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
-$version = "20250320_191806"
+$version = "20250503_021555"
 # Enable-RunspaceDebug -BreakAll
 
 <#
@@ -57,9 +57,6 @@ function Start-Main {
       <Enabled>true</Enabled>
       <RandomDelay>PT1H</RandomDelay>
     </TimeTrigger>
-    <LogonTrigger>
-      <Enabled>true</Enabled>
-    </LogonTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">

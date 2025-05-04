@@ -7,11 +7,19 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/04/30 01:14:06.
+  .Last Change: 2025/05/05 08:36:43.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
 # Enable-RunspaceDebug -BreakAll
+
+$app = @{}
+# const value.
+$app.Add("cnst", @{
+    SUCCESS = 0
+    WARN = 1
+    ERROR = 2
+  })
 
 <#
   .SYNOPSIS
@@ -49,6 +57,7 @@ function log {
     ミューテックスを作成して返却する
   .INPUTS
     - app
+    - name: ミューテックス名称を指定する場合は設定する
   .OUTPUTS
     - $mutex: 成功
     - $null: 失敗
@@ -57,14 +66,17 @@ function New-Mutex {
 
   [CmdletBinding()]
   [OutputType([object])]
-  param([PSCustomObject]$app)
+  param([PSCustomObject]$app, [string]$name = "")
   trap {
     log "[New-Mutex] Error $_" "Red"
     throw $_
   }
 
-  $mutexName = "Global¥$($app.cmdName)_$($app.mode)"
-  log "Create mutex name: [${mutexName}]"
+  $mutexName = "Global¥${name}"
+  if ([string]::IsNullOrEmpty($name)) {
+    $mutexName = "Global¥$($app.cmdName)_$($app.mode)"
+  }
+  log "[New-Mutex] Create mutex name: [${mutexName}]"
   $mutex = New-Object System.Threading.Mutex($false, $mutexName)
 
   return $mutex
@@ -289,7 +301,7 @@ function Copy-File {
   param([string]$src, [string]$dst)
 
   if (!(Check-FileHash $src $dst)) {
-    log "Copy-File: $src -> $dst"
+    log "[Copy-File] Copy-File: $src -> $dst"
     New-Item -Force -ItemType Directory ([System.IO.Path]::GetDirectoryName($dst)) | Out-Null
     Copy-Item -Force $src $dst
   }
@@ -320,7 +332,7 @@ function Ensure-ScheduledTask {
   $xml = [xml]$xmlStr
   $registerXmlFile = [System.IO.Path]::Combine($app.spyrunBase, "task", "register", ($xml.Task.RegistrationInfo.URI -replace "^\\spyrun\\", "") + ".xml")
 
-  log "xmlStr: ${xmlStr}"
+  log "[Ensure-ScheduledTask] xmlStr: ${xmlStr}"
   New-Item -Force -ItemType Directory (Split-Path -Parent $registerXmlFile) | Out-Null
   $xmlStr | Set-Content -Encoding utf8 $registerXmlFile
 
@@ -331,7 +343,7 @@ function Ensure-ScheduledTask {
       throw "Time over !!!"
     }
     if (Test-Path $registerXmlFile) {
-      log "Task is not registered ! so wait ... [${registerXmlFile}]"
+      log "[Ensure-ScheduledTask] Task is not registered ! so wait ... [${registerXmlFile}]"
       Start-Sleep -Seconds 1
     } else {
       break
@@ -379,16 +391,16 @@ function Remove-ScheduledTask {
   while ($true) {
     if ((Get-Date) -gt $limitTime) {
       log "[Remove-ScheduledTask] Time over !!!" "Red"
-      return 1
+      return $app.cnst.ERROR
     }
     if (Test-Path $unRegisterXmlFile) {
-      log "Task is not unregistered ! so wait ... [${unRegisterXmlFile}]"
+      log "[Remove-ScheduledTask] Task is not unregistered ! so wait ... [${unRegisterXmlFile}]"
       Start-Sleep -Seconds 1
     } else {
       break
     }
   }
-  return 0
+  return $app.cnst.SUCCESS
 }
 
 <#
@@ -407,6 +419,7 @@ function Remove-ScheduledTask {
       remove: 同期完了後、 src を削除するかどうか。削除は spyrun.exe 側で実施される。
               $true: 削除 / $false: 削除しない (Defalut: $false)
       usertype: "core", "system", "user" (Default: "core")
+      testdst: dst が存在するかチェックする
   .OUTPUTS
     - result: 0 (成功) / not 0 (失敗)
 #>
@@ -422,7 +435,7 @@ function Sync-FS {
 
   log "[Sync-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
   $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
-  $result = -1
+  $result = $app.cnst.ERROR
 
   $ifBase = & {
     if (($arg.usertype -eq "system") -or ($arg.usertype -eq "user")) {
@@ -439,7 +452,7 @@ function Sync-FS {
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $syncFile
 
   if ($arg.async) {
-    $result = 0
+    $result = $app.cnst.SUCCESS
     return $result
   }
 
@@ -448,11 +461,11 @@ function Sync-FS {
   while ($true) {
     if ((Get-Date) -gt $limitTime) {
       log "[Sync-FS] Time over !!!" "Red"
-      $result = 1
+      $result = $app.cnst.ERROR
       return $result
     }
     if (Test-Path $syncFile) {
-      log "Sync is not ended ! so wait ... [${syncFile}]"
+      log "[Sync-FS] Sync is not ended ! so wait ... [${syncFile}]"
       Start-Sleep -Seconds 1
     } else {
       $result = (Get-Content -Encoding utf8 $syncFileResult | ConvertFrom-Json).result
@@ -488,7 +501,7 @@ function Remove-FS {
 
   log "[Remove-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
   $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
-  $result = -1
+  $result = $app.cnst.ERROR
 
   $ifBase = & {
     if (($arg.usertype -eq "system") -or ($arg.usertype -eq "user")) {
@@ -505,7 +518,7 @@ function Remove-FS {
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $removeFile
 
   if ($arg.async) {
-    $result = 0
+    $result = $app.cnst.SUCCESS
     return $result
   }
 
@@ -514,7 +527,7 @@ function Remove-FS {
   while ($true) {
     if ((Get-Date) -gt $limitTime) {
       log "[Remove-FS] Time over !!!" "Red"
-      $result = 1
+      $result = $app.cnst.ERROR
       return $result
     }
     if (Test-Path $removeFile) {
@@ -556,7 +569,7 @@ function Exec-FS {
 
   log "[Exec-FS] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
   $arg | Add-Member -MemberType NoteProperty -Name time -Value ([PSCustomObject]@{ in = Get-Date -Format "yyyy/MM/dd HH:mm:ss.fff"; out = "" })
-  $result = -1
+  $result = $app.cnst.ERROR
 
   $ifBase = & {
     if (($arg.usertype -eq "system") -or ($arg.usertype -eq "user")) {
@@ -573,7 +586,7 @@ function Exec-FS {
   $arg | ConvertTo-Json | Set-Content -Encoding utf8 $execFile
 
   if ($arg.async) {
-    $result = 0
+    $result = $app.cnst.SUCCESS
     return $result
   }
 
@@ -582,7 +595,7 @@ function Exec-FS {
   while ($true) {
     if ((Get-Date) -gt $limitTime) {
       log "[Exec-FS] Time over !!!" "Red"
-      $result = 1
+      $result = $app.cnst.ERROR
       return $result
     }
     if (Test-Path $execFile) {
@@ -594,6 +607,281 @@ function Exec-FS {
     }
   }
   return $result
+}
+
+<#
+  .SYNOPSIS
+    Invoke-Sync
+  .DESCRIPTION
+    sync を実行する
+  .INPUTS
+    - arg: 引数情報 (PSCustomObject)
+      path: 情報ファイルパス
+  .OUTPUTS
+    - result: 0 (成功) / not 0 (失敗)
+#>
+function Invoke-Sync {
+  [CmdletBinding()]
+  [OutputType([int])]
+  param([PSCustomObject]$arg)
+
+  log "[Invoke-Sync] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $result = $app.cnst.ERROR
+  $mutex = New-Mutex $app $arg.path
+  if (!$mutex.WaitOne(0, $false)) {
+    log "[Invoke-Sync] 2重起動です！終了します。" "Yellow"
+    return $app.cnst.WARN
+  }
+  if (!(Test-Path $arg.path)) {
+    log "[Invoke-Sync] $($arg.path) は存在しません"
+    return $app.cnst.WARN
+  }
+  try {
+    $json = Get-Content -Encoding utf8 $arg.path
+    log "[Invoke-Sync] json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "[Invoke-Sync] src: [$($cfg.src)]"
+    log "[Invoke-Sync] dst: [$($cfg.dst)]"
+    log "[Invoke-Sync] type: [$($cfg.type)]"
+    log "[Invoke-Sync] option: [$($cfg.option)]"
+    log "[Invoke-Sync] remove: [$($cfg.remove)]"
+    log "[Invoke-Sync] usertype: [$($cfg.usertype)]"
+    log "[Invoke-Sync] testdst: [$($cfg.testdst)]"
+    if (!(Test-Path $cfg.src)) {
+      throw "[Invoke-Sync] $($cfg.src) is not found !"
+    }
+    if ($cfg.testdst) {
+      if (!(Test-Path $cfg.dst)) {
+        log "[Invoke-Sync] $($cfg.dst) は存在しません"
+        $result = $app.cnst.WARN
+        return $result
+      }
+    }
+    if ($cfg.type -eq "directory") {
+      $robocopyResult = Execute-Process ([PSCustomObject]@{ cmd = "robocopy.exe"; arg = "`"$($cfg.src)`" `"$($cfg.dst)`" $($cfg.option)"; })
+      log "[Invoke-Sync] code: [$($robocopyResult.code)]"
+      log "[Invoke-Sync] stdout: [$($robocopyResult.stdout)]"
+      log "[Invoke-Sync] stderr: [$($robocopyResult.stderr)]"
+      if ($robocopyResult.code -ge 8) {
+        throw "[Invoke-Sync] robocopy error !"
+      }
+    } elseif ($cfg.type -eq "file") {
+      New-Item -Force -ItemType Directory (Split-Path -Parent $cfg.dst) | Out-Null
+      Invoke-Expression "Copy-Item $($cfg.option) `"$($cfg.src)`" `"$($cfg.dst)`""
+    } else {
+      throw "[Invoke-Sync] Error `type` must be `file` or `directory` (type: $($cfg.type))"
+    }
+    Get-ChildItem -Force -Recurse -File $cfg.dst | ForEach-Object {
+      Unblock-File $_.FullName
+    }
+    if ($cfg.remove) {
+      log "[Invoke-Sync] Remove flg on, so remove [$($cfg.src)] !"
+      Remove-Item -Force -Recurse $cfg.src
+    }
+    Remove-Item -Force $arg.path
+    $result = $app.cnst.SUCCESS
+  } catch {
+    if (($null -eq $result) -or ($result -eq $app.cnst.SUCCESS)) {
+      $result = $app.cnst.ERROR
+    }
+    log "[Invoke-Sync] Error ! $_"
+    Move-ToNg ([PSCustomObject]@{ path = $arg.path })
+  } finally {
+    $resultFile = $arg.path.Replace("/", "\").Replace("\if\sync", "\if\sync_result")
+    [PSCustomObject]@{
+      time = [PSCustomObject]@{
+        in = $cfg.time.in
+        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      }
+      src = $cfg.src
+      dst = $cfg.dst
+      type = $cfg.type
+      option = $cfg.option
+      remove = $cfg.remove
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 "${resultFile}"
+  }
+}
+
+<#
+  .SYNOPSIS
+    Invoke-Remove
+  .DESCRIPTION
+    remove を実行する
+  .INPUTS
+    - arg: 引数情報 (PSCustomObject)
+      path: 情報ファイルパス
+  .OUTPUTS
+    - None
+#>
+function Invoke-Remove {
+  [CmdletBinding()]
+  [OutputType([void])]
+  param([PSCustomObject]$arg)
+
+  log "[Invoke-Remove] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $result = $app.cnst.ERROR
+  $mutex = New-Mutex $app $arg.path
+  if (!$mutex.WaitOne(0, $false)) {
+    log "[Invoke-Remove] 2重起動です！終了します。" "Yellow"
+    return $app.cnst.WARN
+  }
+  if (!(Test-Path $arg.path)) {
+    log "[Invoke-Remove] $($arg.path) は存在しません"
+    return $app.cnst.WARN
+  }
+  try {
+    $json = Get-Content -Encoding utf8 $arg.path
+    log "[Invoke-Remove] json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "[Invoke-Remove] path: [$($cfg.path)]"
+    if (Test-Path $cfg.path) {
+      log "[Invoke-Remove] Remove: [$($cfg.path)]"
+      Remove-Item -Force -Recurse $cfg.path
+    } else {
+      log "[Invoke-Remove] $($cfg.path) is not found !"
+    }
+    Remove-Item -Force $arg.path
+    $result = $app.cnst.SUCCESS
+  } catch {
+    if (($null -eq $result) -or ($result -eq $app.cnst.SUCCESS)) {
+      $result = $app.cnst.ERROR
+    }
+    log "[Invoke-Remove] [Invoke-Remove] Error ! $_"
+    Move-ToNg ([PSCustomObject]@{ path = $arg.path })
+  } finally {
+    $resultFile = $arg.path.Replace("/", "\").Replace("\if\remove", "\if\remove_result")
+    [PSCustomObject]@{
+      time = [PSCustomObject]@{
+        in = $cfg.time.in
+        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      }
+      path = $cfg.path
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 "${resultFile}"
+  }
+}
+
+<#
+  .SYNOPSIS
+    Invoke-Exec
+  .DESCRIPTION
+    exec を実行する
+  .INPUTS
+    - arg: 引数情報 (PSCustomObject)
+      path: 情報ファイルパス
+  .OUTPUTS
+    - None
+#>
+function Invoke-Exec {
+  [CmdletBinding()]
+  [OutputType([void])]
+  param([PSCustomObject]$arg)
+
+  log "[Invoke-Exec] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $result = $app.cnst.ERROR
+  $mutex = New-Mutex $app $arg.path
+  if (!$mutex.WaitOne(0, $false)) {
+    log "[Invoke-Exec] 2重起動です！終了します。" "Yellow"
+    return $app.cnst.WARN
+  }
+  if (!(Test-Path $arg.path)) {
+    log "[Invoke-Exec] $($arg.path) は存在しません"
+    return $app.cnst.WARN
+  }
+  try {
+    $json = Get-Content -Encoding utf8 $arg.path
+    log "[Invoke-Exec] json: ${json}"
+    $cfg = $json | ConvertFrom-Json
+    log "[Invoke-Exec] cmd: [$($cfg.cmd)]"
+    log "[Invoke-Exec] arg: [$($cfg.arg)]"
+    log "[Invoke-Exec] dir: [$($cfg.dir)]"
+    $ret = Execute-Process ([PSCustomObject]@{ cmd = $cfg.cmd; arg = $cfg.arg -join " "; dir = $cfg.dir })
+    log "[Invoke-Exec] code: [$($ret.code)]"
+    log "[Invoke-Exec] stdout: [$($ret.stdout)]"
+    log "[Invoke-Exec] stderr: [$($ret.stderr)]"
+    Remove-Item -Force $arg.path
+    $result = $ret.code
+  } catch {
+    if (($null -eq $result) -or ($result -eq $app.cnst.SUCCESS)) {
+      $result = $app.cnst.ERROR
+    }
+    log "[Invoke-Exec] Error ! $_"
+    Move-ToNg ([PSCustomObject]@{ path = $arg.path })
+  } finally {
+    $resultFile = $arg.path.Replace("/", "\").Replace("\if\exec", "\if\exec_result")
+    [PSCustomObject]@{
+      time = [PSCustomObject]@{
+        in = $cfg.time.in
+        out = Get-Date -f "yyyy/MM/dd HH:mm:ss.fff"
+      }
+      cmd = $cfg.cmd
+      arg = $cfg.arg
+      dir = $cfg.dir
+      result = $result
+    } | ConvertTo-Json | Set-Content -Encoding utf8 "${resultFile}"
+  }
+}
+
+<#
+  .SYNOPSIS
+    Move-ToNg
+  .DESCRIPTION
+    ファイルを NG 領域へ移動する
+  .INPUTS
+    - arg: 引数情報 (PSCustomObject)
+      path: 対象ファイルパス
+  .OUTPUTS
+    - None
+#>
+function Move-ToNg {
+  [CmdletBinding()]
+  [OutputType([int])]
+  param([string]$path)
+  trap {
+    log "[Move-ToNg] Error $_" "Red"
+    throw $_
+  }
+
+  log "[Move-ToNg] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+  $src = $arg.path
+  $dst = $src.Replace("/", "\").Replace("\if\", "\ng\if\").Replace("\task\", "\ng\task\")
+  log "[Move-ToNg] [${src}] -> [${dst}]"
+  New-Item -Force -ItemType Directory (Split-Path -Parent $dst) | Out-Null
+  Move-Item -Force $src $dst
+}
+
+<#
+  .SYNOPSIS
+    Result-Task
+  .DESCRIPTION
+    タスクの結果ファイルを転送する
+  .INPUTS
+    - arg: リザルト情報 (PSCustomObject)
+      result: 結果サフィックス
+      async: $true: 非同期 / $false: 同期 (Default: $false)
+  .OUTPUTS
+    - result: 0 (成功) / not 0 (失敗)
+#>
+function Result-Task {
+  [CmdletBinding()]
+  [OutputType([int])]
+  param([PSCustomObject]$arg)
+  trap {
+    log "[Result-Task] Error $_" "Red"
+    throw $_
+  }
+
+  log "[Result-Task] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
+
+  log "[Result-Task] Create result file."
+  $resultPath = [System.IO.Path]::Combine($app.resultDirRemote, "${env:COMPUTERNAME}_$($app.logName)_$($arg.result).log")
+  return Sync-FS ([PSCustomObject]@{
+      src = $app.logFile
+      dst = $resultPath
+      type = "file"
+      async = $arg.async
+    })
 }
 
 <#
@@ -621,16 +909,13 @@ function Exit-Task {
 
   log "[Exit-Task] arg: $([PSCustomObject]$arg | ConvertTo-Json)"
 
-  log "[Exit-Task] Create result file."
-  $resultPath = [System.IO.Path]::Combine($app.resultDirRemote, "${env:COMPUTERNAME}_$($app.logName)_$($arg.result).log")
-  Sync-FS ([PSCustomObject]@{
-      src = $app.logFile
-      dst = $resultPath
-      type = "file"
-    })
+  $result = Result-Task ([PSCustomObject]@{ result = $arg.result; async = $arg.async })
+  if ($result -ne $app.cnst.SUCCESS) {
+    log "[Exit-Task] Error ! result: [${result}]" "Red"
+  }
 
   log "[Exit-Task] Create del file."
-  $result = 0
+  $result = $app.cnst.SUCCESS
   $app.baseRemotes | ForEach-Object {
     $p = $arg.path.Replace($app.baseLocal, $_)
     $r = New-DelFile ([PSCustomObject]@{
@@ -640,7 +925,7 @@ function Exit-Task {
   } | ForEach-Object {
     $result += $_
   }
-  if ($result -ne 0) {
+  if ($result -ne $app.cnst.SUCCESS) {
     log "[Exit-Task] Error ! result: [${result}]" "Red"
   }
 
@@ -654,10 +939,10 @@ function Exit-Task {
       async = $arg.async
     })
 
-  if ($result -ne 0) {
+  if ($result -ne $app.cnst.SUCCESS) {
     log "[Exit-Task] Error ! result: [${result}]" "Red"
-    return $result
   }
+  return $result
 }
 
 <#
@@ -704,10 +989,10 @@ function Check-ModifiedCmd {
           option = "/mir"
         })
     }
-    return 1
+    return $app.cnst.ERROR
   }
 
-  if ($result -ne 0) {
+  if ($result -ne $app.cnst.SUCCESS) {
     log "[Check-ModifiedCmd] Error ! result: [${result}]" "Red"
     return $result
   }
@@ -726,11 +1011,11 @@ function Check-ModifiedCmd {
 
   if ($localHashBefore -ne $localHashAfter) {
     log "[Check-ModifiedCmd] hash chainged !"
-    return -1
+    return $app.cnst.ERROR
   }
 
   log "[Check-ModifiedCmd] end"
-  return 0
+  return $app.cnst.SUCCESS
 }
 
 <#
@@ -907,20 +1192,20 @@ function Wait-Spyrun {
   while ($true) {
     if ((Get-Date) -gt $limitTime) {
       log "[Wait-Spyrun] Time over !!!" "Red"
-      return 1
+      return $app.cnst.ERROR
     }
     Get-CimInstance -ClassName Win32_Process | Where-Object {
       $_.Name -eq "spyrun.exe" -and $_.CommandLine -match $userType
     } | Set-Variable spyrun
     if ($null -ne $spyrun) {
-      log "Process spyrun.exe is Found !"
+      log "[Wait-Spyrun] Process spyrun.exe is Found !"
       return
     } else {
-      log "Process spyrun.exe is not found ..."
+      log "[Wait-Spyrun] Process spyrun.exe is not found ..."
       Start-Sleep -Seconds 1
     }
   }
-  return 0
+  return $app.cnst.SUCCESS
 }
 
 <#
@@ -945,8 +1230,6 @@ function Start-Init {
   }
 
   log "[Start-Init] Start"
-
-  $app = @{}
 
   $cmdFullPath = & {
     if ($env:__SCRIPTPATH) {
@@ -985,17 +1268,21 @@ function Start-Init {
 
   $app.Add("baseRemotes", (Get-Content -Encoding utf8 $app.baseFilePath | Where-Object { $_.Trim() -notmatch "^$" }))
   $app.Add("baseRemote", @($app.baseRemotes)[0])
+  $app.Add("baseUserTypeRemote", [System.IO.Path]::Combine($app.baseRemote, $app.userType))
   $app.Add("datRemote", [System.IO.Path]::Combine($app.baseRemote, "dat"))
   $app.Add("delRemote", [System.IO.Path]::Combine($app.baseRemote, "del"))
   $app.Add("flgRemote", [System.IO.Path]::Combine($app.baseRemote, "flg"))
-  $app.Add("clctRemote", [System.IO.Path]::Combine($app.baseRemote, $app.userType, "clct"))
-  $app.Add("resultDirRemote", [System.IO.Path]::Combine($app.baseRemote, $app.userType, "result", $app.scope, $app.cmdName))
+  $app.Add("ngRemote", [System.IO.Path]::Combine($app.baseUserTypeRemote, "ng"))
+  $app.Add("clctRemote", [System.IO.Path]::Combine($app.baseUserTypeRemote, "clct"))
+  $app.Add("resultDirRemote", [System.IO.Path]::Combine($app.baseUserTypeRemote, "result", $app.scope, $app.cmdName))
   $app.Add("resultPrefixFileRemote", [System.IO.Path]::Combine($app.resultDirRemote, "${env:COMPUTERNAME}_$($app.cmdName)"))
 
   $app.Add("baseLocal", [System.IO.Path]::Combine($app.spyrunBase))
+  $app.Add("baseUserTypeLocal", $app.baseUserTypeRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("datLocal", $app.datRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("delLocal", $app.delRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("flgLocal", $app.flgRemote.Replace($app.baseRemote, $app.baseLocal))
+  $app.Add("ngLocal", $app.ngRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("clctLocal", $app.clctRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("resultDirLocal", $app.resultDirRemote.Replace($app.baseRemote, $app.baseLocal))
   $app.Add("resultPrefixFileLocal", $app.resultPrefixFileRemote.Replace($app.baseRemote, $app.baseLocal))
@@ -1014,17 +1301,12 @@ function Start-Init {
   log "[Start-Init] version: $($app.version)"
   log ([PSCustomObject]$app | ConvertTo-Json)
 
-  # const value.
-  $app.Add("cnst", @{
-      SUCCESS = 0
-      ERROR   = 1
-    })
-
   # mutex check
   $app.Add("mutex", (New-Mutex $app))
+  # TODO: 二重起動を許容するパターンも対応必要
   if (!$app.mutex.WaitOne(0, $false)) {
-    log "2重起動です！終了します。" "Yellow"
-    exit $app.cnst.SUCCESS
+    log "[Start-Init] 2重起動です！終了します。" "Yellow"
+    exit $app.cnst.WARN
   }
   $app.lock = $true
 
