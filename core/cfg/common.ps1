@@ -7,7 +7,7 @@
     - None
   .OUTPUTS
     - 0: SUCCESS / 1: ERROR
-  .Last Change: 2025/05/05 08:36:43.
+  .Last Change: 2025/05/05 12:32:30.
 #>
 $ErrorActionPreference = "Stop"
 $DebugPreference = "SilentlyContinue" # Continue SilentlyContinue Stop Inquire
@@ -837,7 +837,7 @@ function Invoke-Exec {
 function Move-ToNg {
   [CmdletBinding()]
   [OutputType([int])]
-  param([string]$path)
+  param([object]$arg)
   trap {
     log "[Move-ToNg] Error $_" "Red"
     throw $_

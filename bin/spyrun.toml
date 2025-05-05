@@ -1,11 +1,11 @@
 # =============================================================================
 # File        : spyrun.toml
 # Author      : yukimemi
-# Last Change : 2025/05/03 16:18:40.
+# Last Change : 2025/05/05 12:09:38.
 # =============================================================================
 
 [vars]
-version = '20250503_161840'
+version = '20250505_120938'
 
 base_local = '{{ cmd_dir }}\..'
 base_local_core = '{{ base_local }}\core'
@@ -319,7 +319,7 @@ arg = [
     Remove-Item -Force '{{ event_path }}'
   } catch {
     log "{{ spy_name }} Error ! $_"
-    move_to_ng '{{ event_path }}'
+    Move-ToNg ([PSCustomObject]@{ path = '{{ event_path }}' })
   }
 }''',
 ]
@@ -398,7 +398,7 @@ arg = ['-NoProfile', '-Command', '''& {
     Remove-Item -Force '{{ event_path }}'
   } catch {
     log "{{ spy_name }} Error ! $_"
-    move_to_ng '{{ event_path }}'
+    Move-ToNg ([PSCustomObject]@{ path = '{{ event_path }}' })
   }
 }''']
 
